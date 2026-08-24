@@ -25,10 +25,16 @@
   --font-data: var(--font-dm-mono);
 }
 
+html,
+body {
+  overflow-x: hidden;
+}
+
 body {
   background: var(--gbx-paper);
   color: var(--gbx-charcoal);
   font-family: var(--font-body), system-ui, sans-serif;
+  -webkit-text-size-adjust: 100%;
 }
 
 input[type="number"]::-webkit-outer-spin-button,

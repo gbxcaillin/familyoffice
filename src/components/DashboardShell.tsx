@@ -46,7 +46,7 @@ export default function DashboardShell({
               </span>
             </div>
 
-            <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3 sm:gap-6">
               <span className="text-sm text-white/50 font-body">
                 {userName}
               </span>
@@ -65,7 +65,7 @@ export default function DashboardShell({
       {/* Tab navigation */}
       <nav className="bg-white border-b border-gbx-border">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex gap-0 -mb-px">
+          <div className="flex gap-0 -mb-px overflow-x-auto">
             {tabs.map((tab) => {
               const isActive =
                 tab.href === "/"
@@ -75,7 +75,7 @@ export default function DashboardShell({
                 <button
                   key={tab.href}
                   onClick={() => router.push(tab.href)}
-                  className={`px-5 py-3.5 text-[11px] uppercase tracking-[0.15em] font-body font-medium border-b-2 transition-colors ${
+                  className={`px-4 sm:px-5 py-3.5 text-[11px] uppercase tracking-[0.15em] font-body font-medium border-b-2 transition-colors whitespace-nowrap shrink-0 ${
                     isActive
                       ? "border-gbx-teal text-gbx-teal"
                       : "border-transparent text-gbx-muted hover:text-gbx-charcoal hover:border-gbx-border"

@@ -360,7 +360,7 @@ export default function HoldingsPage() {
             Live market data via Yahoo Finance
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-2 sm:gap-3 flex-wrap">
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -390,24 +390,24 @@ export default function HoldingsPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-gbx-charcoal border border-white/5 p-6">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <div className="bg-gbx-charcoal border border-white/5 p-4 sm:p-6 col-span-2 lg:col-span-1">
           <p className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal mb-1">
             Portfolio Value
           </p>
-          <p className="font-data text-3xl text-white">
+          <p className="font-data text-2xl sm:text-3xl text-white break-words">
             {formatCurrency(totalMarketValue)}
           </p>
           <p className="text-xs text-white/40 font-body mt-1">
             {holdings.length} holding{holdings.length !== 1 ? "s" : ""}
           </p>
         </div>
-        <div className="bg-white border border-gbx-border p-6">
+        <div className="bg-white border border-gbx-border p-4 sm:p-6">
           <p className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted mb-1">
             Unrealised Gain/Loss
           </p>
           <p
-            className={`font-data text-2xl ${
+            className={`font-data text-lg sm:text-2xl break-words ${
               totalGainLoss >= 0 ? "text-gbx-teal" : "text-red-600"
             }`}
           >
@@ -423,12 +423,12 @@ export default function HoldingsPage() {
             {formatCurrency(totalCost)} cost
           </p>
         </div>
-        <div className="bg-white border border-gbx-border p-6">
+        <div className="bg-white border border-gbx-border p-4 sm:p-6">
           <p className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted mb-1">
             Realised Gain/Loss
           </p>
           <p
-            className={`font-data text-2xl ${
+            className={`font-data text-lg sm:text-2xl break-words ${
               totalRealised >= 0 ? "text-gbx-teal" : "text-red-600"
             }`}
           >
@@ -440,11 +440,11 @@ export default function HoldingsPage() {
             {trades.filter((t) => t.side === "sell").length !== 1 ? "s" : ""}
           </p>
         </div>
-        <div className="bg-white border border-gbx-border p-6">
+        <div className="bg-white border border-gbx-border p-4 sm:p-6">
           <p className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted mb-1">
             Annual Dividend Income
           </p>
-          <p className="font-data text-2xl text-gbx-teal">
+          <p className="font-data text-lg sm:text-2xl break-words text-gbx-teal">
             {formatCurrency(totalAnnualIncome)}
           </p>
           <p className="text-xs text-gbx-muted font-data mt-1">
@@ -457,7 +457,7 @@ export default function HoldingsPage() {
 
       {/* Record trade form */}
       {showTrade && (
-        <div className="bg-white border border-gbx-border p-6">
+        <div className="bg-white border border-gbx-border p-4 sm:p-6">
           <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal mb-4">
             Record Trade
           </h2>
@@ -628,7 +628,7 @@ export default function HoldingsPage() {
 
       {/* Add holding form */}
       {showAdd && (
-        <div className="bg-white border border-gbx-border p-6">
+        <div className="bg-white border border-gbx-border p-4 sm:p-6">
           <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal mb-4">
             Add New Holding
           </h2>
@@ -769,23 +769,23 @@ export default function HoldingsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-gbx-border">
-                {[
-                  "Ticker",
-                  "Name",
-                  "Account",
-                  "Units",
-                  "Price",
-                  "Day %",
-                  "Market Value",
-                  "Cost Basis",
-                  "Gain/Loss",
-                  "Div Yield",
-                  "Annual Income",
-                  "",
-                ].map((h) => (
+                {([
+                  ["Ticker", ""],
+                  ["Name", "hidden xl:table-cell"],
+                  ["Account", "hidden lg:table-cell"],
+                  ["Units", "hidden sm:table-cell"],
+                  ["Price", "hidden md:table-cell"],
+                  ["Day %", "hidden lg:table-cell"],
+                  ["Market Value", ""],
+                  ["Cost Basis", "hidden xl:table-cell"],
+                  ["Gain/Loss", ""],
+                  ["Div Yield", "hidden xl:table-cell"],
+                  ["Annual Income", "hidden md:table-cell"],
+                  ["", ""],
+                ] as [string, string][]).map(([h, cls], i) => (
                   <th
-                    key={h}
-                    className="px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted"
+                    key={i}
+                    className={`px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted ${cls}`}
                   >
                     {h}
                   </th>
@@ -801,20 +801,20 @@ export default function HoldingsPage() {
                   <td className="px-4 py-3 font-data text-sm font-medium text-gbx-charcoal">
                     {h.ticker}
                   </td>
-                  <td className="px-4 py-3 text-sm font-body text-gbx-charcoal max-w-[200px] truncate">
+                  <td className="hidden xl:table-cell px-4 py-3 text-sm font-body text-gbx-charcoal max-w-[200px] truncate">
                     {h.display_name}
                   </td>
-                  <td className="px-4 py-3 text-xs font-body text-gbx-muted">
+                  <td className="hidden lg:table-cell px-4 py-3 text-xs font-body text-gbx-muted">
                     {h.account_name}
                   </td>
-                  <td className="px-4 py-3 font-data text-sm text-gbx-charcoal">
+                  <td className="hidden sm:table-cell px-4 py-3 font-data text-sm text-gbx-charcoal">
                     {h.units.toLocaleString()}
                   </td>
-                  <td className="px-4 py-3 font-data text-sm text-gbx-charcoal">
+                  <td className="hidden md:table-cell px-4 py-3 font-data text-sm text-gbx-charcoal">
                     {h.cached_price ? formatCurrency(h.cached_price) : "—"}
                   </td>
                   <td
-                    className={`px-4 py-3 font-data text-sm ${
+                    className={`hidden lg:table-cell px-4 py-3 font-data text-sm ${
                       (h.cached_change_percent || 0) >= 0
                         ? "text-gbx-teal"
                         : "text-red-600"
@@ -827,7 +827,7 @@ export default function HoldingsPage() {
                       ? formatCurrency(h.market_value)
                       : "—"}
                   </td>
-                  <td className="px-4 py-3 font-data text-sm text-gbx-muted">
+                  <td className="hidden xl:table-cell px-4 py-3 font-data text-sm text-gbx-muted">
                     {formatCurrency(h.total_cost)}
                   </td>
                   <td
@@ -847,12 +847,12 @@ export default function HoldingsPage() {
                       "—"
                     )}
                   </td>
-                  <td className="px-4 py-3 font-data text-sm text-gbx-charcoal">
+                  <td className="hidden xl:table-cell px-4 py-3 font-data text-sm text-gbx-charcoal">
                     {h.cached_dividend_yield !== null
                       ? `${h.cached_dividend_yield.toFixed(2)}%`
                       : "—"}
                   </td>
-                  <td className="px-4 py-3 font-data text-sm text-gbx-teal">
+                  <td className="hidden md:table-cell px-4 py-3 font-data text-sm text-gbx-teal">
                     {h.annual_income !== null
                       ? formatCurrency(h.annual_income)
                       : "—"}
@@ -870,17 +870,18 @@ export default function HoldingsPage() {
             </tbody>
             <tfoot>
               <tr className="border-t-2 border-gbx-border bg-gbx-soft/30">
-                <td
-                  colSpan={4}
-                  className="px-4 py-3 text-xs uppercase tracking-[0.15em] font-body font-medium text-gbx-muted"
-                >
+                <td className="px-4 py-3 text-xs uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">
                   Totals
                 </td>
-                <td colSpan={2} />
+                <td className="hidden xl:table-cell" />
+                <td className="hidden lg:table-cell" />
+                <td className="hidden sm:table-cell" />
+                <td className="hidden md:table-cell" />
+                <td className="hidden lg:table-cell" />
                 <td className="px-4 py-3 font-data text-sm font-bold text-gbx-charcoal">
                   {formatCurrency(totalMarketValue)}
                 </td>
-                <td className="px-4 py-3 font-data text-sm text-gbx-muted">
+                <td className="hidden xl:table-cell px-4 py-3 font-data text-sm text-gbx-muted">
                   {formatCurrency(totalCost)}
                 </td>
                 <td
@@ -894,8 +895,8 @@ export default function HoldingsPage() {
                     ({formatPercent(totalGainLossPercent)})
                   </span>
                 </td>
-                <td />
-                <td className="px-4 py-3 font-data text-sm font-bold text-gbx-teal">
+                <td className="hidden xl:table-cell" />
+                <td className="hidden md:table-cell px-4 py-3 font-data text-sm font-bold text-gbx-teal">
                   {formatCurrency(totalAnnualIncome)}
                 </td>
                 <td />
@@ -913,7 +914,7 @@ export default function HoldingsPage() {
 
       {/* Performance */}
       {holdings.length > 0 && (
-        <div className="bg-white border border-gbx-border p-6">
+        <div className="bg-white border border-gbx-border p-4 sm:p-6">
           <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
             <div>
               <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal">
@@ -1008,18 +1009,18 @@ export default function HoldingsPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="border-b border-gbx-border">
-                      {[
-                        "Ticker",
-                        "Name",
-                        "Start Price",
-                        "End Price",
-                        "Return",
-                        "Value Change",
-                        "Vs Cost Basis",
-                      ].map((h) => (
+                      {([
+                        ["Ticker", ""],
+                        ["Name", "hidden lg:table-cell"],
+                        ["Start Price", "hidden md:table-cell"],
+                        ["End Price", "hidden sm:table-cell"],
+                        ["Return", ""],
+                        ["Value Change", ""],
+                        ["Vs Cost Basis", "hidden md:table-cell"],
+                      ] as [string, string][]).map(([h, cls]) => (
                         <th
                           key={h}
-                          className="px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted"
+                          className={`px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted ${cls}`}
                         >
                           {h}
                         </th>
@@ -1041,15 +1042,15 @@ export default function HoldingsPage() {
                           <td className="px-4 py-3 font-data text-sm font-medium text-gbx-charcoal">
                             {p.ticker}
                           </td>
-                          <td className="px-4 py-3 text-sm font-body text-gbx-charcoal max-w-[200px] truncate">
+                          <td className="hidden lg:table-cell px-4 py-3 text-sm font-body text-gbx-charcoal max-w-[200px] truncate">
                             {p.name}
                           </td>
-                          <td className="px-4 py-3 font-data text-sm text-gbx-muted">
+                          <td className="hidden md:table-cell px-4 py-3 font-data text-sm text-gbx-muted">
                             {p.startPrice !== null
                               ? formatCurrency(p.startPrice)
                               : "—"}
                           </td>
-                          <td className="px-4 py-3 font-data text-sm text-gbx-charcoal">
+                          <td className="hidden sm:table-cell px-4 py-3 font-data text-sm text-gbx-charcoal">
                             {p.endPrice !== null
                               ? formatCurrency(p.endPrice)
                               : "—"}
@@ -1080,7 +1081,7 @@ export default function HoldingsPage() {
                             )}
                           </td>
                           <td
-                            className={`px-4 py-3 font-data text-sm ${
+                            className={`hidden md:table-cell px-4 py-3 font-data text-sm ${
                               p.endPrice !== null &&
                               p.cost_basis > 0 &&
                               p.endPrice >= p.cost_basis
@@ -1142,21 +1143,21 @@ export default function HoldingsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-y border-gbx-border">
-                  {[
-                    "Date",
-                    "Side",
-                    "Ticker",
-                    "Account",
-                    "Units",
-                    "Price",
-                    "Fees",
-                    "Total",
-                    "Realised P&L",
-                    "",
-                  ].map((h) => (
+                  {([
+                    ["Date", ""],
+                    ["Side", ""],
+                    ["Ticker", ""],
+                    ["Account", "hidden lg:table-cell"],
+                    ["Units", "hidden sm:table-cell"],
+                    ["Price", "hidden sm:table-cell"],
+                    ["Fees", "hidden xl:table-cell"],
+                    ["Total", ""],
+                    ["Realised P&L", ""],
+                    ["", ""],
+                  ] as [string, string][]).map(([h, cls], i) => (
                     <th
-                      key={h}
-                      className="px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted"
+                      key={i}
+                      className={`px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted ${cls}`}
                     >
                       {h}
                     </th>
@@ -1186,16 +1187,16 @@ export default function HoldingsPage() {
                     <td className="px-4 py-3 font-data text-sm font-medium text-gbx-charcoal">
                       {t.ticker}
                     </td>
-                    <td className="px-4 py-3 text-xs font-body text-gbx-muted">
+                    <td className="hidden lg:table-cell px-4 py-3 text-xs font-body text-gbx-muted">
                       {t.account_name}
                     </td>
-                    <td className="px-4 py-3 font-data text-sm text-gbx-charcoal">
+                    <td className="hidden sm:table-cell px-4 py-3 font-data text-sm text-gbx-charcoal">
                       {t.units.toLocaleString()}
                     </td>
-                    <td className="px-4 py-3 font-data text-sm text-gbx-charcoal">
+                    <td className="hidden sm:table-cell px-4 py-3 font-data text-sm text-gbx-charcoal">
                       {formatCurrency(t.price)}
                     </td>
-                    <td className="px-4 py-3 font-data text-sm text-gbx-muted">
+                    <td className="hidden xl:table-cell px-4 py-3 font-data text-sm text-gbx-muted">
                       {t.fees > 0 ? formatCurrency(t.fees) : "—"}
                     </td>
                     <td className="px-4 py-3 font-data text-sm text-gbx-charcoal">

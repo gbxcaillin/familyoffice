@@ -49,11 +49,11 @@ function StatCard({
   sub?: string;
 }) {
   return (
-    <div className="bg-white border border-gbx-border p-6">
+    <div className="bg-white border border-gbx-border p-4 sm:p-6">
       <p className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted mb-1">
         {label}
       </p>
-      <p className="font-data text-2xl text-gbx-charcoal">{value}</p>
+      <p className="font-data text-lg sm:text-2xl text-gbx-charcoal break-words">{value}</p>
       {sub && (
         <p className="text-xs text-gbx-muted font-body mt-1">{sub}</p>
       )}
@@ -97,12 +97,12 @@ export default function DashboardPage() {
       </div>
 
       {/* Top stat cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-gbx-charcoal border border-white/5 p-6">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <div className="bg-gbx-charcoal border border-white/5 p-4 sm:p-6 col-span-2 lg:col-span-1">
           <p className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal mb-1">
             Total Net Worth
           </p>
-          <p className="font-data text-3xl text-white">
+          <p className="font-data text-2xl sm:text-3xl text-white break-words">
             {formatCurrency(data.totalNetWorth)}
           </p>
           <p className="text-xs text-white/40 font-body mt-1">

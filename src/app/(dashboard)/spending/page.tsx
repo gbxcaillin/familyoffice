@@ -205,8 +205,8 @@ export default function SpendingPage() {
               <tr className="border-b border-gbx-border">
                 <th className="text-left px-4 py-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">Date</th>
                 <th className="text-left px-4 py-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">Description</th>
-                <th className="text-left px-4 py-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">Account</th>
-                <th className="text-left px-4 py-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">Category</th>
+                <th className="hidden md:table-cell text-left px-4 py-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">Account</th>
+                <th className="hidden sm:table-cell text-left px-4 py-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">Category</th>
                 <th className="text-right px-4 py-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">Amount</th>
                 <th className="px-4 py-3 w-8"></th>
               </tr>
@@ -216,8 +216,8 @@ export default function SpendingPage() {
                 <tr key={txn.id} className="border-b border-gbx-border/50 hover:bg-gbx-soft/30 transition-colors">
                   <td className="px-4 py-3 font-data text-sm text-gbx-charcoal">{txn.date}</td>
                   <td className="px-4 py-3 text-sm font-body text-gbx-charcoal">{txn.description}</td>
-                  <td className="px-4 py-3 text-sm font-body text-gbx-muted">{txn.account_name}</td>
-                  <td className="px-4 py-3 text-xs font-body text-gbx-muted">{txn.category || "—"}</td>
+                  <td className="hidden md:table-cell px-4 py-3 text-sm font-body text-gbx-muted">{txn.account_name}</td>
+                  <td className="hidden sm:table-cell px-4 py-3 text-xs font-body text-gbx-muted">{txn.category || "—"}</td>
                   <td className={`px-4 py-3 text-right font-data text-sm ${txn.amount >= 0 ? "text-gbx-teal" : "text-red-600"}`}>
                     {txn.amount >= 0 ? "+" : ""}{formatCurrency(txn.amount)}
                   </td>
