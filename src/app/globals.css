@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+:root {
+  --gbx-paper: #FFFDF8;
+  --gbx-soft: #F6F3EC;
+  --gbx-teal: #2E8B6E;
+  --gbx-deep-teal: #1A5C4A;
+  --gbx-charcoal: #1A1A1A;
+  --gbx-void: #0A0A0A;
+  --gbx-border: #E5E0D8;
+  --gbx-muted: #8A8578;
+}
+
+@theme inline {
+  --color-gbx-paper: var(--gbx-paper);
+  --color-gbx-soft: var(--gbx-soft);
+  --color-gbx-teal: var(--gbx-teal);
+  --color-gbx-deep-teal: var(--gbx-deep-teal);
+  --color-gbx-charcoal: var(--gbx-charcoal);
+  --color-gbx-void: var(--gbx-void);
+  --color-gbx-border: var(--gbx-border);
+  --color-gbx-muted: var(--gbx-muted);
+  --font-heading: var(--font-cormorant);
+  --font-body: var(--font-montserrat);
+  --font-data: var(--font-dm-mono);
+}
+
+body {
+  background: var(--gbx-paper);
+  color: var(--gbx-charcoal);
+  font-family: var(--font-body), system-ui, sans-serif;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
