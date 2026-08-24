@@ -47,23 +47,54 @@ export function normaliseTicker(ticker: string): string {
   return upper;
 }
 
+// USD→AUD spot rate, cached for 10 minutes. Everything in the app reports
+// in AUD; quotes in other currencies are converted on the way in.
+let audRateCache: { rate: number; fetchedAt: number } | null = null;
+
+export async function getUsdToAudRate(): Promise<number | null> {
+  if (audRateCache && Date.now() - audRateCache.fetchedAt < 10 * 60 * 1000) {
+    return audRateCache.rate;
+  }
+  try {
+    const yahooFinance = await getYahoo();
+    const result: any = await yahooFinance.quote("AUD=X");
+    if (result?.regularMarketPrice) {
+      audRateCache = { rate: result.regularMarketPrice, fetchedAt: Date.now() };
+      return audRateCache.rate;
+    }
+  } catch {
+    // fall through
+  }
+  return audRateCache?.rate ?? null;
+}
+
 export async function getQuote(ticker: string): Promise<QuoteResult | null> {
   try {
     const yahooFinance = await getYahoo();
     const result: any = await yahooFinance.quote(normaliseTicker(ticker));
     if (!result || !result.regularMarketPrice) return null;
 
+    // Convert USD-quoted instruments to AUD so the whole app is one currency.
+    let fx = 1;
+    const quoteCurrency = result.currency || "AUD";
+    if (quoteCurrency === "USD") {
+      const rate = await getUsdToAudRate();
+      if (rate) fx = rate;
+    }
+
     return {
-      price: result.regularMarketPrice,
-      currency: result.currency || "AUD",
+      price: result.regularMarketPrice * fx,
+      currency: fx !== 1 ? "AUD" : quoteCurrency,
       changePercent: result.regularMarketChangePercent || 0,
-      dayHigh: result.regularMarketDayHigh || result.regularMarketPrice,
-      dayLow: result.regularMarketDayLow || result.regularMarketPrice,
-      marketCap: result.marketCap || null,
+      dayHigh: (result.regularMarketDayHigh || result.regularMarketPrice) * fx,
+      dayLow: (result.regularMarketDayLow || result.regularMarketPrice) * fx,
+      marketCap: result.marketCap ? result.marketCap * fx : null,
       dividendYield: result.trailingAnnualDividendYield
         ? result.trailingAnnualDividendYield * 100
         : null,
-      annualDividend: result.trailingAnnualDividendRate || null,
+      annualDividend: result.trailingAnnualDividendRate
+        ? result.trailingAnnualDividendRate * fx
+        : null,
       name: result.shortName || result.longName || ticker,
       exchange: result.fullExchangeName || result.exchange || "",
     };

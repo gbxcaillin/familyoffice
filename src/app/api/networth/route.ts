@@ -11,6 +11,7 @@ interface AccountRow {
 
 interface HoldingValueRow {
   account_owner: string;
+  account_type: string;
   market_value: number | null;
 }
 
@@ -51,12 +52,13 @@ export async function GET() {
 
   const holdingValues = db.prepare(`
     SELECT a.owner as account_owner,
+      a.type as account_type,
       SUM(h.units * pc.price) as market_value
     FROM holdings h
     JOIN accounts a ON h.account_id = a.id
     LEFT JOIN price_cache pc ON UPPER(h.ticker) = UPPER(pc.ticker)
     WHERE pc.price IS NOT NULL
-    GROUP BY a.owner
+    GROUP BY a.owner, a.type
   `).all() as HoldingValueRow[];
 
   let holdingsTotal = 0;
@@ -64,7 +66,7 @@ export async function GET() {
     const val = row.market_value || 0;
     holdingsTotal += val;
     totalNetWorth += val;
-    byType["brokerage"] = (byType["brokerage"] || 0) + val;
+    byType[row.account_type] = (byType[row.account_type] || 0) + val;
 
     if (row.account_owner === "person1") person1Total += val;
     else if (row.account_owner === "person2") person2Total += val;

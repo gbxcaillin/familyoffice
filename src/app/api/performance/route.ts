@@ -72,6 +72,7 @@ export async function GET(request: NextRequest) {
   const yahooFinance = await getYahoo();
 
   const seriesByTicker: Record<string, { date: string; close: number }[]> = {};
+  const currencyByTicker: Record<string, string> = {};
 
   await Promise.all(
     positions.map(async (p) => {
@@ -87,12 +88,59 @@ export async function GET(request: NextRequest) {
             date: new Date(q.date).toISOString().slice(0, 10),
             close: q.close as number,
           }));
-        if (quotes.length > 0) seriesByTicker[p.ticker] = quotes;
+        if (quotes.length > 0) {
+          seriesByTicker[p.ticker] = quotes;
+          currencyByTicker[p.ticker] = result?.meta?.currency || "AUD";
+        }
       } catch {
         // Ticker without history in this window is reported with null returns.
       }
     })
   );
+
+  // Convert USD-denominated series to AUD using the historical USD/AUD rate,
+  // forward-filled to each price date.
+  const usdTickers = Object.keys(seriesByTicker).filter(
+    (t) => currencyByTicker[t] === "USD"
+  );
+  if (usdTickers.length > 0) {
+    try {
+      const fxResult: any = await yahooFinance.chart("AUD=X", {
+        period1: from,
+        period2: to,
+        interval: interval as any,
+      });
+      const fxSeries = (fxResult?.quotes || [])
+        .filter((q: any) => q.close !== null && q.close !== undefined)
+        .map((q: any) => ({
+          date: new Date(q.date).toISOString().slice(0, 10),
+          close: q.close as number,
+        }));
+      if (fxSeries.length > 0) {
+        const fxMap = new Map<string, number>(
+          fxSeries.map((q: { date: string; close: number }) => [q.date, q.close])
+        );
+        const fxDates = fxSeries.map((q: { date: string }) => q.date).sort();
+        const rateAt = (date: string): number => {
+          if (fxMap.has(date)) return fxMap.get(date)!;
+          let last = fxSeries[0].close;
+          for (const d of fxDates) {
+            if (d > date) break;
+            last = fxMap.get(d)!;
+          }
+          return last;
+        };
+        for (const t of usdTickers) {
+          seriesByTicker[t] = seriesByTicker[t].map((q) => ({
+            date: q.date,
+            close: q.close * rateAt(q.date),
+          }));
+        }
+      }
+    } catch {
+      // If FX history is unavailable the USD series stays unconverted.
+    }
+  }
 
   const perAsset = positions.map((p) => {
     const series = seriesByTicker[p.ticker];
