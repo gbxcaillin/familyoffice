@@ -1,6 +1,10 @@
 # Build stage
 FROM node:22-slim AS builder
 WORKDIR /app
+# Toolchain for native modules (better-sqlite3) when no prebuilt binary matches
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3 make g++ ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
