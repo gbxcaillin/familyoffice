@@ -95,6 +95,19 @@ function initSchema(db: Database.Database) {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS trades (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      ticker TEXT NOT NULL,
+      side TEXT NOT NULL CHECK(side IN ('buy','sell')),
+      units REAL NOT NULL,
+      price REAL NOT NULL,
+      fees REAL NOT NULL DEFAULT 0,
+      trade_date TEXT NOT NULL,
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS dividends (
       id TEXT PRIMARY KEY,
       holding_id TEXT NOT NULL REFERENCES holdings(id) ON DELETE CASCADE,

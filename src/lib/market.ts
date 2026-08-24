@@ -1,5 +1,18 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+// yahoo-finance2 v4 requires an instantiated client; share one per process.
+let yahooInstance: any = null;
+
+export async function getYahoo(): Promise<any> {
+  if (!yahooInstance) {
+    const { default: YahooFinance } = await import("yahoo-finance2");
+    yahooInstance = new (YahooFinance as any)({
+      suppressNotices: ["yahooSurvey"],
+    });
+  }
+  return yahooInstance;
+}
+
 interface QuoteResult {
   price: number;
   currency: string;
@@ -36,7 +49,7 @@ export function normaliseTicker(ticker: string): string {
 
 export async function getQuote(ticker: string): Promise<QuoteResult | null> {
   try {
-    const { default: yahooFinance } = await import("yahoo-finance2");
+    const yahooFinance = await getYahoo();
     const result: any = await yahooFinance.quote(normaliseTicker(ticker));
     if (!result || !result.regularMarketPrice) return null;
 
@@ -82,16 +95,17 @@ export async function getDividendHistory(
   fromDate?: Date
 ): Promise<DividendEvent[]> {
   try {
-    const { default: yahooFinance } = await import("yahoo-finance2");
+    const yahooFinance = await getYahoo();
     const period1 = fromDate || new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
-    const result: any[] = await yahooFinance.historical(normaliseTicker(ticker), {
+    const result: any = await yahooFinance.chart(normaliseTicker(ticker), {
       period1,
       events: "dividends",
     });
 
-    return (result || []).map((d: any) => ({
-      date: d.date,
-      amount: d.adjClose || 0,
+    const dividendEvents = result?.events?.dividends || [];
+    return dividendEvents.map((d: any) => ({
+      date: new Date(d.date),
+      amount: d.amount || 0,
     }));
   } catch {
     return [];

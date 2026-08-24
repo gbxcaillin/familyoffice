@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import getDb from "@/lib/db";
-import { getQuotes, getQuote } from "@/lib/market";
+import { getQuotes, getQuote, getYahoo } from "@/lib/market";
 
 interface TickerRow {
   ticker: string;
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
 
   if (action === "search" && ticker) {
     try {
-      const { default: yahooFinance } = await import("yahoo-finance2");
+      const yahooFinance = await getYahoo();
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const results: any = await yahooFinance.search(ticker);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

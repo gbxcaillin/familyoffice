@@ -29,7 +29,13 @@ function formatDate(dateStr: string): string {
   return d.toLocaleDateString("en-AU", { month: "short", day: "numeric" });
 }
 
-export default function NetWorthChart({ data }: { data: DataPoint[] }) {
+export default function NetWorthChart({
+  data,
+  label = "Net Worth",
+}: {
+  data: DataPoint[];
+  label?: string;
+}) {
   if (data.length === 0) {
     return (
       <div className="h-64 flex items-center justify-center text-gbx-muted text-sm font-body">
@@ -62,7 +68,7 @@ export default function NetWorthChart({ data }: { data: DataPoint[] }) {
           width={60}
         />
         <Tooltip
-          formatter={(value) => [`$${Number(value).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`, "Net Worth"]}
+          formatter={(value) => [`$${Number(value).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`, label]}
           labelFormatter={(label) => formatDate(String(label))}
           contentStyle={{
             background: "#1A1A1A",
