@@ -63,9 +63,11 @@ function StatCard({
 
 export default function DashboardPage() {
   const [data, setData] = useState<NetWorthData | null>(null);
+  const [users, setUsers] = useState({ person1: "Person 1", person2: "Person 2" });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    fetch("/api/users").then((r) => r.json()).then(setUsers).catch(() => {});
     fetch("/api/networth")
       .then((r) => r.json())
       .then(setData)
@@ -114,12 +116,12 @@ export default function DashboardPage() {
           </p>
         </div>
         <StatCard
-          label="Person 1"
+          label={users.person1}
           value={formatCurrency(data.person1Total)}
           sub="Individual holdings"
         />
         <StatCard
-          label="Person 2"
+          label={users.person2}
           value={formatCurrency(data.person2Total)}
           sub="Individual holdings"
         />

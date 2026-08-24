@@ -8,7 +8,10 @@ export async function GET() {
     .prepare(
       `SELECT a.*,
         (SELECT b.balance FROM balances b WHERE b.account_id = a.id ORDER BY b.date DESC LIMIT 1) as latest_balance,
-        (SELECT b.date FROM balances b WHERE b.account_id = a.id ORDER BY b.date DESC LIMIT 1) as latest_balance_date
+        (SELECT b.date FROM balances b WHERE b.account_id = a.id ORDER BY b.date DESC LIMIT 1) as latest_balance_date,
+        (SELECT SUM(h.units * pc.price) FROM holdings h
+          LEFT JOIN price_cache pc ON UPPER(h.ticker) = UPPER(pc.ticker)
+          WHERE h.account_id = a.id) as holdings_value
        FROM accounts a ORDER BY a.type, a.name`
     )
     .all();

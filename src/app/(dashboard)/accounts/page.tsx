@@ -12,6 +12,12 @@ interface Account {
   notes: string | null;
   latest_balance: number | null;
   latest_balance_date: string | null;
+  holdings_value: number | null;
+}
+
+interface Users {
+  person1: string;
+  person2: string;
 }
 
 const TYPES = [
@@ -24,11 +30,7 @@ const TYPES = [
   { value: "other", label: "Other" },
 ];
 
-const OWNERS = [
-  { value: "person1", label: "Person 1" },
-  { value: "person2", label: "Person 2" },
-  { value: "joint", label: "Joint" },
-];
+const DEFAULT_USERS: Users = { person1: "Person 1", person2: "Person 2" };
 
 const TYPE_LABELS: Record<string, string> = {
   bank: "Bank", brokerage: "Brokerage", super: "Super",
@@ -47,6 +49,7 @@ const labelClass = "block text-[10px] uppercase tracking-[0.15em] font-body font
 
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [users, setUsers] = useState<Users>(DEFAULT_USERS);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [showBalanceForm, setShowBalanceForm] = useState<string | null>(null);
@@ -65,7 +68,13 @@ export default function AccountsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => { loadAccounts(); }, [loadAccounts]);
+  useEffect(() => {
+    loadAccounts();
+    fetch("/api/users").then((r) => r.json()).then(setUsers).catch(() => {});
+  }, [loadAccounts]);
+
+  const ownerLabel = (owner: string) =>
+    owner === "joint" ? "Joint" : owner === "person1" ? users.person1 : users.person2;
 
   async function handleCreateAccount(e: React.FormEvent) {
     e.preventDefault();
@@ -147,7 +156,11 @@ export default function AccountsPage() {
             <div>
               <label className={labelClass}>Owner</label>
               <select className={inputClass} value={form.owner} onChange={(e) => setForm({ ...form, owner: e.target.value })}>
-                {OWNERS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {[
+                  { value: "person1", label: users.person1 },
+                  { value: "person2", label: users.person2 },
+                  { value: "joint", label: "Joint" },
+                ].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </div>
             <div>
@@ -184,7 +197,7 @@ export default function AccountsPage() {
                     {acc.name}
                   </h3>
                   <p className="text-[10px] uppercase tracking-[0.15em] text-gbx-muted font-body mt-0.5">
-                    {TYPE_LABELS[acc.type]} · {acc.owner === "joint" ? "Joint" : acc.owner === "person1" ? "Person 1" : "Person 2"}
+                    {TYPE_LABELS[acc.type]} · {ownerLabel(acc.owner)}
                   </p>
                 </div>
                 <button
@@ -202,8 +215,18 @@ export default function AccountsPage() {
 
               <div className="border-t border-gbx-border pt-3">
                 <p className="font-data text-xl text-gbx-charcoal">
-                  {acc.latest_balance !== null ? formatCurrency(acc.latest_balance) : "—"}
+                  {acc.latest_balance !== null || acc.holdings_value !== null
+                    ? formatCurrency(
+                        (acc.latest_balance || 0) + (acc.holdings_value || 0)
+                      )
+                    : "—"}
                 </p>
+                {acc.holdings_value !== null && acc.holdings_value > 0 && (
+                  <p className="text-[11px] text-gbx-muted font-data mt-0.5">
+                    {formatCurrency(acc.latest_balance || 0)} cash ·{" "}
+                    {formatCurrency(acc.holdings_value)} holdings
+                  </p>
+                )}
                 {acc.latest_balance_date && (
                   <p className="text-[11px] text-gbx-muted font-data mt-0.5">
                     as of {acc.latest_balance_date}
