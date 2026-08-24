@@ -57,7 +57,7 @@ this will be on the public internet.
 
 ## DNS (VentraIP VIPControl)
 
-Add one record to the gbxps.com.au zone:
+Add one record to the gbxps.com zone:
 
 | Type | Hostname            | Value          | TTL  |
 |------|---------------------|----------------|------|
