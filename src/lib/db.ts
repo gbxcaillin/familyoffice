@@ -66,6 +66,45 @@ function initSchema(db: Database.Database) {
       type TEXT NOT NULL CHECK(type IN ('income','expense')),
       color TEXT DEFAULT '#2E8B6E'
     );
+
+    CREATE TABLE IF NOT EXISTS holdings (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      ticker TEXT NOT NULL,
+      name TEXT,
+      units REAL NOT NULL,
+      cost_basis REAL NOT NULL DEFAULT 0,
+      currency TEXT DEFAULT 'AUD',
+      notes TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS price_cache (
+      ticker TEXT PRIMARY KEY,
+      price REAL NOT NULL,
+      currency TEXT DEFAULT 'AUD',
+      change_percent REAL,
+      day_high REAL,
+      day_low REAL,
+      market_cap REAL,
+      dividend_yield REAL,
+      annual_dividend REAL,
+      name TEXT,
+      exchange TEXT,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS dividends (
+      id TEXT PRIMARY KEY,
+      holding_id TEXT NOT NULL REFERENCES holdings(id) ON DELETE CASCADE,
+      ticker TEXT NOT NULL,
+      ex_date TEXT NOT NULL,
+      pay_date TEXT,
+      amount REAL NOT NULL,
+      currency TEXT DEFAULT 'AUD',
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   const catCount = db.prepare("SELECT COUNT(*) as count FROM categories").get() as { count: number };

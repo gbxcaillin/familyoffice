@@ -9,6 +9,11 @@ interface AccountRow {
   latest_balance: number | null;
 }
 
+interface HoldingValueRow {
+  account_owner: string;
+  market_value: number | null;
+}
+
 interface BalanceRow {
   date: string;
   total: number;
@@ -42,6 +47,28 @@ export async function GET() {
     if (acc.owner === "person1") person1Total += bal;
     else if (acc.owner === "person2") person2Total += bal;
     else jointTotal += bal;
+  }
+
+  const holdingValues = db.prepare(`
+    SELECT a.owner as account_owner,
+      SUM(h.units * pc.price) as market_value
+    FROM holdings h
+    JOIN accounts a ON h.account_id = a.id
+    LEFT JOIN price_cache pc ON UPPER(h.ticker) = UPPER(pc.ticker)
+    WHERE pc.price IS NOT NULL
+    GROUP BY a.owner
+  `).all() as HoldingValueRow[];
+
+  let holdingsTotal = 0;
+  for (const row of holdingValues) {
+    const val = row.market_value || 0;
+    holdingsTotal += val;
+    totalNetWorth += val;
+    byType["brokerage"] = (byType["brokerage"] || 0) + val;
+
+    if (row.account_owner === "person1") person1Total += val;
+    else if (row.account_owner === "person2") person2Total += val;
+    else jointTotal += val;
   }
 
   const balanceHistory = db.prepare(`
@@ -81,6 +108,7 @@ export async function GET() {
     person1Total,
     person2Total,
     jointTotal,
+    holdingsTotal,
     byType,
     balanceHistory,
     recentSpending,

@@ -9,6 +9,7 @@ interface NetWorthData {
   person1Total: number;
   person2Total: number;
   jointTotal: number;
+  holdingsTotal: number;
   byType: Record<string, number>;
   balanceHistory: { date: string; total: number }[];
   recentSpending: { category: string; total: number }[];
@@ -101,6 +102,8 @@ export default function DashboardPage() {
           </p>
           <p className="text-xs text-white/40 font-body mt-1">
             Across {data.accountCount} accounts
+            {data.holdingsTotal > 0 &&
+              ` · ${formatCurrency(data.holdingsTotal)} in holdings`}
           </p>
         </div>
         <StatCard
