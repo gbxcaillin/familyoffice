@@ -1,4 +1,4 @@
-# Deploying to office.gbxps.com.au
+# Deploying to office.gbxps.com
 
 The app runs on a small VPS with Docker. Caddy handles HTTPS automatically.
 Total cost: roughly AU$10/month for the server. Everything else is free.
@@ -61,7 +61,7 @@ Add one record to the gbxps.com.au zone:
 
 | Type | Hostname            | Value          | TTL  |
 |------|---------------------|----------------|------|
-| A    | office.gbxps.com.au | your server IP | 3600 |
+| A    | office.gbxps.com | your server IP | 3600 |
 
 ## Launch
 
@@ -72,7 +72,7 @@ docker compose up -d --build
 
 First build takes a few minutes. Once DNS has propagated, Caddy fetches the
 HTTPS certificate automatically on the first request. Visit
-https://office.gbxps.com.au and log in.
+https://office.gbxps.com and log in.
 
 ## Backups
 
