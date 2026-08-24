@@ -6,6 +6,8 @@ import SpendingChart from "@/components/SpendingChart";
 
 interface NetWorthData {
   totalNetWorth: number;
+  totalAssets: number;
+  totalLiabilities: number;
   person1Total: number;
   person2Total: number;
   jointTotal: number;
@@ -24,6 +26,7 @@ const TYPE_LABELS: Record<string, string> = {
   super: "Superannuation",
   property: "Property",
   crypto: "Crypto",
+  loan: "Loans",
   other: "Other",
 };
 
@@ -101,9 +104,13 @@ export default function DashboardPage() {
             {formatCurrency(data.totalNetWorth)}
           </p>
           <p className="text-xs text-white/40 font-body mt-1">
-            Across {data.accountCount} accounts
-            {data.holdingsTotal > 0 &&
-              ` · ${formatCurrency(data.holdingsTotal)} in holdings`}
+            {data.totalLiabilities > 0
+              ? `Assets ${formatCurrency(data.totalAssets)} · Liabilities ${formatCurrency(data.totalLiabilities)}`
+              : `Across ${data.accountCount} accounts${
+                  data.holdingsTotal > 0
+                    ? ` · ${formatCurrency(data.holdingsTotal)} in holdings`
+                    : ""
+                }`}
           </p>
         </div>
         <StatCard
@@ -156,11 +163,12 @@ export default function DashboardPage() {
           ) : (
             <div className="space-y-3">
               {Object.entries(data.byType)
+                .filter(([, value]) => value >= 0)
                 .sort(([, a], [, b]) => b - a)
                 .map(([type, value]) => {
                   const pct =
-                    data.totalNetWorth > 0
-                      ? (value / data.totalNetWorth) * 100
+                    data.totalAssets > 0
+                      ? (value / data.totalAssets) * 100
                       : 0;
                   return (
                     <div key={type}>
@@ -184,6 +192,41 @@ export default function DashboardPage() {
                     </div>
                   );
                 })}
+
+              {data.totalLiabilities > 0 && (
+                <div className="pt-3 border-t border-gbx-border">
+                  <p className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted mb-3">
+                    Liabilities
+                  </p>
+                  {Object.entries(data.byType)
+                    .filter(([, value]) => value < 0)
+                    .sort(([, a], [, b]) => a - b)
+                    .map(([type, value]) => {
+                      const pct =
+                        data.totalLiabilities > 0
+                          ? (-value / data.totalLiabilities) * 100
+                          : 0;
+                      return (
+                        <div key={type} className="mb-3 last:mb-0">
+                          <div className="flex justify-between items-baseline mb-1">
+                            <span className="text-sm font-body text-gbx-charcoal">
+                              {TYPE_LABELS[type] || type}
+                            </span>
+                            <span className="font-data text-sm text-red-600">
+                              -{formatCurrency(-value)}
+                            </span>
+                          </div>
+                          <div className="h-2 bg-gbx-soft rounded-sm overflow-hidden">
+                            <div
+                              className="h-full bg-red-600/70 transition-all"
+                              style={{ width: `${Math.max(pct, 1)}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
             </div>
           )}
         </div>

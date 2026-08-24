@@ -16,11 +16,41 @@ function getDb(): Database.Database {
 }
 
 function initSchema(db: Database.Database) {
+  // Migration: older databases created the accounts table without the 'loan'
+  // type in its CHECK constraint. SQLite can't alter a CHECK, so rebuild.
+  const accountsDef = db
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='accounts'"
+    )
+    .get() as { sql: string } | undefined;
+  if (accountsDef && !accountsDef.sql.includes("'loan'")) {
+    db.pragma("foreign_keys = OFF");
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE accounts_new (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('bank','brokerage','super','property','crypto','loan','other')),
+          owner TEXT NOT NULL CHECK(owner IN ('person1','person2','joint')),
+          institution TEXT,
+          currency TEXT DEFAULT 'AUD',
+          notes TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          updated_at TEXT DEFAULT (datetime('now'))
+        );
+        INSERT INTO accounts_new SELECT * FROM accounts;
+        DROP TABLE accounts;
+        ALTER TABLE accounts_new RENAME TO accounts;
+      `);
+    })();
+    db.pragma("foreign_keys = ON");
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS accounts (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
-      type TEXT NOT NULL CHECK(type IN ('bank','brokerage','super','property','crypto','other')),
+      type TEXT NOT NULL CHECK(type IN ('bank','brokerage','super','property','crypto','loan','other')),
       owner TEXT NOT NULL CHECK(owner IN ('person1','person2','joint')),
       institution TEXT,
       currency TEXT DEFAULT 'AUD',

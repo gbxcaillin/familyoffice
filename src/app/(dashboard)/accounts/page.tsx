@@ -20,6 +20,7 @@ const TYPES = [
   { value: "super", label: "Superannuation" },
   { value: "property", label: "Property" },
   { value: "crypto", label: "Crypto" },
+  { value: "loan", label: "Loan / Mortgage" },
   { value: "other", label: "Other" },
 ];
 
@@ -31,7 +32,7 @@ const OWNERS = [
 
 const TYPE_LABELS: Record<string, string> = {
   bank: "Bank", brokerage: "Brokerage", super: "Super",
-  property: "Property", crypto: "Crypto", other: "Other",
+  property: "Property", crypto: "Crypto", loan: "Loan", other: "Other",
 };
 
 function formatCurrency(value: number): string {

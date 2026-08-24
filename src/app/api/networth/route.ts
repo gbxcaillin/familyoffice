@@ -105,8 +105,17 @@ export async function GET() {
     WHERE amount < 0 AND date >= date('now', '-30 days')
   `).get() as { total: number | null };
 
+  let totalAssets = 0;
+  let totalLiabilities = 0;
+  for (const value of Object.values(byType)) {
+    if (value >= 0) totalAssets += value;
+    else totalLiabilities += -value;
+  }
+
   return NextResponse.json({
     totalNetWorth,
+    totalAssets,
+    totalLiabilities,
     person1Total,
     person2Total,
     jointTotal,
