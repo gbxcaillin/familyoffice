@@ -33,6 +33,7 @@ yarn-error.log*
 # env files
 .env*
 !.env.example
+!.env.production.example
 
 # uploaded documents (private financial data)
 /uploads/*
