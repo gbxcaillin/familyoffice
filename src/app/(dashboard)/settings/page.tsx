@@ -49,17 +49,56 @@ const GROUPS: { key: keyof LayoutPrefs; title: string; note: string }[] = [
   },
 ];
 
+interface BeforeInstallPromptEvent extends Event {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
+}
+
 export default function SettingsPage() {
   const [prefs, setPrefs] = useState<LayoutPrefs | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+
+  const [installPrompt, setInstallPrompt] =
+    useState<BeforeInstallPromptEvent | null>(null);
+  const [installed, setInstalled] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
 
   useEffect(() => {
     fetch("/api/prefs")
       .then((r) => r.json())
       .then(setPrefs)
       .catch(() => {});
+
+    setIsIOS(
+      /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
+    );
+    if (window.matchMedia("(display-mode: standalone)").matches) {
+      setInstalled(true);
+    }
+    const onPrompt = (e: Event) => {
+      e.preventDefault();
+      setInstallPrompt(e as BeforeInstallPromptEvent);
+    };
+    const onInstalled = () => {
+      setInstalled(true);
+      setInstallPrompt(null);
+    };
+    window.addEventListener("beforeinstallprompt", onPrompt);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onPrompt);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
   }, []);
+
+  async function handleInstall() {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === "accepted") setInstallPrompt(null);
+  }
 
   function move(group: keyof LayoutPrefs, index: number, delta: -1 | 1) {
     if (!prefs) return;
@@ -134,6 +173,50 @@ export default function SettingsPage() {
           >
             {saving ? "Saving..." : saved ? "Saved ✓" : "Save Layout"}
           </button>
+        </div>
+      </div>
+
+      {/* Install as an app */}
+      <div className="bg-gbx-charcoal border border-white/5 p-4 sm:p-6">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div className="flex items-center gap-4">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/icons/icon-192.png"
+              alt="GBX app icon"
+              className="w-12 h-12 border border-white/10"
+            />
+            <div>
+              <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal">
+                GBX Family Office App
+              </h2>
+              <p className="text-sm text-white/60 font-body mt-1">
+                {installed
+                  ? "Installed on this device — open it from your home screen."
+                  : "Install to your home screen for a full-screen app with the GBX icon."}
+              </p>
+            </div>
+          </div>
+          {!installed && installPrompt && (
+            <button
+              onClick={handleInstall}
+              className="px-5 py-2.5 bg-gbx-teal text-white text-xs uppercase tracking-[0.15em] font-body font-medium hover:bg-gbx-deep-teal transition-colors"
+            >
+              Download App
+            </button>
+          )}
+          {!installed && !installPrompt && (
+            <p className="text-xs text-white/50 font-body max-w-xs">
+              {isIOS
+                ? "In Safari: tap the Share button, then “Add to Home Screen”."
+                : "In your browser menu (⋮): tap “Add to Home screen” or “Install app”."}
+            </p>
+          )}
+          {installed && (
+            <span className="text-xs uppercase tracking-[0.15em] font-body font-medium text-gbx-teal">
+              Installed ✓
+            </span>
+          )}
         </div>
       </div>
 
