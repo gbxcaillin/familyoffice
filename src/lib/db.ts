@@ -167,6 +167,7 @@ function initSchema(db: Database.Database) {
   for (const col of [
     "interest_rate REAL",
     "repayment_amount REAL",
+    "redraw_available REAL",
   ]) {
     try {
       db.exec(`ALTER TABLE accounts ADD COLUMN ${col}`);

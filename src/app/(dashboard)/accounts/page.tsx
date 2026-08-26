@@ -15,6 +15,7 @@ interface Account {
   holdings_value: number | null;
   interest_rate: number | null;
   repayment_amount: number | null;
+  redraw_available: number | null;
 }
 
 interface Users {
@@ -66,7 +67,7 @@ export default function AccountsPage() {
   const [showEditForm, setShowEditForm] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     name: "", type: "bank", owner: "person1", institution: "", notes: "",
-    interest_rate: "", repayment_amount: "",
+    interest_rate: "", repayment_amount: "", redraw_available: "",
   });
 
   const loadAccounts = useCallback(() => {
@@ -132,6 +133,8 @@ export default function AccountsPage() {
       interest_rate: acc.interest_rate !== null ? String(acc.interest_rate) : "",
       repayment_amount:
         acc.repayment_amount !== null ? String(acc.repayment_amount) : "",
+      redraw_available:
+        acc.redraw_available !== null ? String(acc.redraw_available) : "",
     });
   }
 
@@ -297,6 +300,10 @@ export default function AccountsPage() {
                           <label className={labelClass}>Repayment ($/month)</label>
                           <input type="number" step="0.01" className={inputClass} value={editForm.repayment_amount} onChange={(e) => setEditForm({ ...editForm, repayment_amount: e.target.value })} placeholder="5735.10" />
                         </div>
+                        <div className="col-span-2">
+                          <label className={labelClass}>Redraw Available ($)</label>
+                          <input type="number" step="0.01" className={inputClass} value={editForm.redraw_available} onChange={(e) => setEditForm({ ...editForm, redraw_available: e.target.value })} placeholder="13229.25" />
+                        </div>
                       </>
                     )}
                     <div className="col-span-2">
@@ -324,6 +331,14 @@ export default function AccountsPage() {
                     {formatCurrency(acc.holdings_value)} holdings
                   </p>
                 )}
+                {acc.type === "loan" &&
+                  acc.redraw_available !== null &&
+                  acc.redraw_available > 0 && (
+                    <p className="text-[11px] text-gbx-teal font-data mt-0.5">
+                      {formatCurrency(acc.redraw_available)} redraw available ·
+                      ahead of schedule
+                    </p>
+                  )}
                 {acc.latest_balance_date && (
                   <p className="text-[11px] text-gbx-muted font-data mt-0.5">
                     as of {acc.latest_balance_date}

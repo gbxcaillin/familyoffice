@@ -7,6 +7,7 @@ interface LoanRow {
   institution: string | null;
   interest_rate: number;
   repayment_amount: number;
+  redraw_available: number | null;
   balance: number | null;
 }
 
@@ -46,7 +47,7 @@ export async function GET() {
 
   const loans = db
     .prepare(
-      `SELECT a.id, a.name, a.institution, a.interest_rate, a.repayment_amount,
+      `SELECT a.id, a.name, a.institution, a.interest_rate, a.repayment_amount, a.redraw_available,
         (SELECT b.balance FROM balances b WHERE b.account_id = a.id ORDER BY b.date DESC LIMIT 1) as balance
        FROM accounts a
        WHERE a.type = 'loan' AND a.interest_rate IS NOT NULL AND a.repayment_amount IS NOT NULL`
@@ -84,6 +85,7 @@ export async function GET() {
         interestRate: loan.interest_rate,
         repayment: loan.repayment_amount,
         monthlyInterest: (owing * loan.interest_rate) / 100 / 12,
+        redrawAvailable: loan.redraw_available,
         scenarios,
       };
     })

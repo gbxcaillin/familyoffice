@@ -17,6 +17,7 @@ interface Loan {
   interestRate: number;
   repayment: number;
   monthlyInterest: number;
+  redrawAvailable: number | null;
   scenarios: Scenario[];
 }
 
@@ -72,7 +73,11 @@ export default function MortgageProjection() {
             </div>
 
             {base && (
-              <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-5">
+              <div
+                className={`grid gap-3 sm:gap-4 mb-5 ${
+                  loan.redrawAvailable ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-3"
+                }`}
+              >
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.15em] font-body text-gbx-muted mb-1">
                     Paid Off
@@ -100,6 +105,19 @@ export default function MortgageProjection() {
                     {formatCurrency(loan.monthlyInterest)}
                   </p>
                 </div>
+                {loan.redrawAvailable !== null && loan.redrawAvailable > 0 && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.15em] font-body text-gbx-muted mb-1">
+                      Ahead of Schedule
+                    </p>
+                    <p className="font-data text-sm sm:text-lg text-gbx-teal">
+                      +{formatCurrency(loan.redrawAvailable)}
+                    </p>
+                    <p className="text-[11px] text-gbx-muted font-data">
+                      available to redraw
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 

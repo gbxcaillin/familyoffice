@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   const body = await request.json();
-  const { id, name, type, owner, institution, notes, interest_rate, repayment_amount } = body;
+  const { id, name, type, owner, institution, notes, interest_rate, repayment_amount, redraw_available } = body;
 
   if (!id || !name || !type || !owner) {
     return NextResponse.json(
@@ -60,7 +60,7 @@ export async function PUT(request: NextRequest) {
   const result = db
     .prepare(
       `UPDATE accounts SET name = ?, type = ?, owner = ?, institution = ?, notes = ?,
-        interest_rate = ?, repayment_amount = ?, updated_at = datetime('now')
+        interest_rate = ?, repayment_amount = ?, redraw_available = ?, updated_at = datetime('now')
        WHERE id = ?`
     )
     .run(
@@ -74,6 +74,9 @@ export async function PUT(request: NextRequest) {
         : null,
       repayment_amount !== undefined && repayment_amount !== null && repayment_amount !== ""
         ? parseFloat(repayment_amount)
+        : null,
+      redraw_available !== undefined && redraw_available !== null && redraw_available !== ""
+        ? parseFloat(redraw_available)
         : null,
       id
     );
