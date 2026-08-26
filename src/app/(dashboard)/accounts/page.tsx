@@ -13,6 +13,8 @@ interface Account {
   latest_balance: number | null;
   latest_balance_date: string | null;
   holdings_value: number | null;
+  interest_rate: number | null;
+  repayment_amount: number | null;
 }
 
 interface Users {
@@ -60,6 +62,12 @@ export default function AccountsPage() {
   });
 
   const [balForm, setBalForm] = useState({ date: "", balance: "", notes: "" });
+
+  const [showEditForm, setShowEditForm] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "", type: "bank", owner: "person1", institution: "", notes: "",
+    interest_rate: "", repayment_amount: "",
+  });
 
   const loadAccounts = useCallback(() => {
     fetch("/api/accounts")
@@ -109,6 +117,33 @@ export default function AccountsPage() {
   async function handleDelete(id: string) {
     if (!confirm("Delete this account and all its data?")) return;
     await fetch(`/api/accounts?id=${id}`, { method: "DELETE" });
+    loadAccounts();
+  }
+
+  function startEdit(acc: Account) {
+    setShowEditForm(acc.id);
+    setShowBalanceForm(null);
+    setEditForm({
+      name: acc.name,
+      type: acc.type,
+      owner: acc.owner,
+      institution: acc.institution || "",
+      notes: acc.notes || "",
+      interest_rate: acc.interest_rate !== null ? String(acc.interest_rate) : "",
+      repayment_amount:
+        acc.repayment_amount !== null ? String(acc.repayment_amount) : "",
+    });
+  }
+
+  async function handleUpdateAccount(e: React.FormEvent) {
+    e.preventDefault();
+    if (!showEditForm) return;
+    await fetch("/api/accounts", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: showEditForm, ...editForm }),
+    });
+    setShowEditForm(null);
     loadAccounts();
   }
 
@@ -200,17 +235,79 @@ export default function AccountsPage() {
                     {TYPE_LABELS[acc.type]} · {ownerLabel(acc.owner)}
                   </p>
                 </div>
-                <button
-                  onClick={() => handleDelete(acc.id)}
-                  className="text-gbx-muted hover:text-red-500 text-xs transition-colors"
-                  title="Delete account"
-                >
-                  ×
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() =>
+                      showEditForm === acc.id
+                        ? setShowEditForm(null)
+                        : startEdit(acc)
+                    }
+                    className="text-[11px] text-gbx-muted hover:text-gbx-teal uppercase tracking-[0.1em] font-body transition-colors"
+                  >
+                    {showEditForm === acc.id ? "Cancel" : "Edit"}
+                  </button>
+                  <button
+                    onClick={() => handleDelete(acc.id)}
+                    className="text-gbx-muted hover:text-red-500 text-xs transition-colors"
+                    title="Delete account"
+                  >
+                    ×
+                  </button>
+                </div>
               </div>
 
               {acc.institution && (
                 <p className="text-xs text-gbx-muted font-body">{acc.institution}</p>
+              )}
+
+              {showEditForm === acc.id && (
+                <form onSubmit={handleUpdateAccount} className="space-y-3 border-t border-gbx-border pt-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelClass}>Name</label>
+                      <input className={inputClass} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} required />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Institution</label>
+                      <input className={inputClass} value={editForm.institution} onChange={(e) => setEditForm({ ...editForm, institution: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Type</label>
+                      <select className={inputClass} value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })}>
+                        {TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label className={labelClass}>Owner</label>
+                      <select className={inputClass} value={editForm.owner} onChange={(e) => setEditForm({ ...editForm, owner: e.target.value })}>
+                        {[
+                          { value: "person1", label: users.person1 },
+                          { value: "person2", label: users.person2 },
+                          { value: "joint", label: "Joint" },
+                        ].map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    </div>
+                    {editForm.type === "loan" && (
+                      <>
+                        <div>
+                          <label className={labelClass}>Interest Rate (% p.a.)</label>
+                          <input type="number" step="0.01" className={inputClass} value={editForm.interest_rate} onChange={(e) => setEditForm({ ...editForm, interest_rate: e.target.value })} placeholder="6.63" />
+                        </div>
+                        <div>
+                          <label className={labelClass}>Repayment ($/month)</label>
+                          <input type="number" step="0.01" className={inputClass} value={editForm.repayment_amount} onChange={(e) => setEditForm({ ...editForm, repayment_amount: e.target.value })} placeholder="5735.10" />
+                        </div>
+                      </>
+                    )}
+                    <div className="col-span-2">
+                      <label className={labelClass}>Notes</label>
+                      <input className={inputClass} value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+                    </div>
+                  </div>
+                  <button type="submit" className="bg-gbx-teal text-white px-4 py-2 text-[11px] uppercase tracking-[0.1em] font-body font-medium hover:bg-gbx-deep-teal transition-colors w-full">
+                    Save Changes
+                  </button>
+                </form>
               )}
 
               <div className="border-t border-gbx-border pt-3">

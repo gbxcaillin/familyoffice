@@ -6,8 +6,10 @@ services:
     volumes:
       - ./data:/app/data
       - ./uploads:/app/uploads
-    expose:
-      - "3000"
+    # Bound to loopback only: reachable by Caddy and the host's cron job,
+    # never from the internet.
+    ports:
+      - "127.0.0.1:3000:3000"
 
   caddy:
     image: caddy:2

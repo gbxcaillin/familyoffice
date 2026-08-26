@@ -148,7 +148,32 @@ function initSchema(db: Database.Database) {
       currency TEXT DEFAULT 'AUD',
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    CREATE TABLE IF NOT EXISTS snapshots (
+      id TEXT PRIMARY KEY,
+      date TEXT NOT NULL UNIQUE,
+      total_net_worth REAL NOT NULL,
+      total_assets REAL NOT NULL,
+      total_liabilities REAL NOT NULL,
+      holdings_value REAL NOT NULL,
+      person1_total REAL NOT NULL DEFAULT 0,
+      person2_total REAL NOT NULL DEFAULT 0,
+      joint_total REAL NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
+
+  // Loan metadata columns, added after the original release.
+  for (const col of [
+    "interest_rate REAL",
+    "repayment_amount REAL",
+  ]) {
+    try {
+      db.exec(`ALTER TABLE accounts ADD COLUMN ${col}`);
+    } catch {
+      // Column already exists.
+    }
+  }
 
   const catCount = db.prepare("SELECT COUNT(*) as count FROM categories").get() as { count: number };
   if (catCount.count === 0) {

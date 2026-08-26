@@ -4,7 +4,14 @@ import { verifyToken } from "@/lib/auth";
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (pathname === "/login" || pathname.startsWith("/api/auth")) {
+  if (
+    pathname === "/login" ||
+    pathname.startsWith("/api/auth") ||
+    pathname === "/api/health" ||
+    pathname.startsWith("/api/cron") ||
+    pathname === "/manifest.webmanifest" ||
+    pathname.startsWith("/icons/")
+  ) {
     return NextResponse.next();
   }
 

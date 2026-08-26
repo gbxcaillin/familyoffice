@@ -23,6 +23,19 @@ const dmMono = DM_Mono({
 export const metadata: Metadata = {
   title: "GBX Family Office",
   description: "Private net worth and financial dashboard",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "GBX Office",
+    statusBarStyle: "black-translucent",
+  },
+  icons: {
+    apple: "/icons/apple-touch-icon.png",
+  },
+};
+
+export const viewport = {
+  themeColor: "#0A0A0A",
 };
 
 export default function RootLayout({

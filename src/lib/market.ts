@@ -130,14 +130,22 @@ export async function getDividendHistory(
     const period1 = fromDate || new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
     const result: any = await yahooFinance.chart(normaliseTicker(ticker), {
       period1,
-      events: "dividends",
+      interval: "1d",
+      events: "div",
     });
 
-    const dividendEvents = result?.events?.dividends || [];
-    return dividendEvents.map((d: any) => ({
-      date: new Date(d.date),
-      amount: d.amount || 0,
-    }));
+    const raw = result?.events?.dividends;
+    const dividendEvents: any[] = Array.isArray(raw)
+      ? raw
+      : raw
+        ? Object.values(raw)
+        : [];
+    return dividendEvents
+      .filter((d: any) => d && d.date && d.amount)
+      .map((d: any) => ({
+        date: new Date(d.date),
+        amount: d.amount,
+      }));
   } catch {
     return [];
   }

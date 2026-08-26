@@ -78,6 +78,7 @@ interface PerfData {
   perAsset: PerfAsset[];
   portfolio: { date: string; total: number }[];
   portfolioReturn: number | null;
+  moneyWeightedReturn: number | null;
 }
 
 type PerfPeriod = "1y" | "3y" | "5y" | "all" | "custom";
@@ -932,6 +933,19 @@ export default function HoldingsPage() {
                       }`}
                     >
                       Portfolio {formatPercent(perf.portfolioReturn)}
+                    </span>
+                  )}
+                  {perf.moneyWeightedReturn !== null && (
+                    <span
+                      className={`font-data ml-2 ${
+                        perf.moneyWeightedReturn >= 0
+                          ? "text-gbx-teal"
+                          : "text-red-600"
+                      }`}
+                      title="Money-weighted (XIRR) return of your actual trades, since first trade"
+                    >
+                      · Your return {formatPercent(perf.moneyWeightedReturn)}{" "}
+                      p.a.
                     </span>
                   )}
                 </p>

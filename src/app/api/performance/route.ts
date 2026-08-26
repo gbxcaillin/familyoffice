@@ -16,6 +16,85 @@ function yearsAgo(n: number): Date {
   return d;
 }
 
+// Annualised internal rate of return for dated cashflows, via bisection.
+function xirr(flows: { date: Date; amount: number }[]): number | null {
+  if (flows.length < 2) return null;
+  const t0 = flows[0].date.getTime();
+  const years = flows.map(
+    (f) => (f.date.getTime() - t0) / (365.25 * 86_400_000)
+  );
+  const npv = (r: number) =>
+    flows.reduce((s, f, i) => s + f.amount / Math.pow(1 + r, years[i]), 0);
+
+  let lo = -0.999;
+  let hi = 10;
+  let flo = npv(lo);
+  const fhi = npv(hi);
+  if (flo * fhi > 0) return null;
+  for (let i = 0; i < 200; i++) {
+    const mid = (lo + hi) / 2;
+    const fmid = npv(mid);
+    if (Math.abs(fmid) < 1e-7) return mid;
+    if (flo * fmid < 0) {
+      hi = mid;
+    } else {
+      lo = mid;
+      flo = fmid;
+    }
+  }
+  return (lo + hi) / 2;
+}
+
+// Money-weighted return since inception: every buy/sell as a dated cashflow,
+// plus today's market value of positions that came from those trades.
+function computeMoneyWeightedReturn(db: any): number | null {
+  const trades = db
+    .prepare(
+      `SELECT trade_date, side, units, price, fees, account_id, UPPER(ticker) as ticker
+       FROM trades ORDER BY trade_date ASC`
+    )
+    .all() as {
+    trade_date: string;
+    side: string;
+    units: number;
+    price: number;
+    fees: number;
+    account_id: string;
+    ticker: string;
+  }[];
+
+  if (trades.length === 0) return null;
+
+  const flows = trades.map((t) => ({
+    date: new Date(t.trade_date),
+    amount:
+      t.side === "buy"
+        ? -(t.units * t.price + t.fees)
+        : t.units * t.price - t.fees,
+  }));
+
+  const tradedKeys = new Set(trades.map((t) => `${t.account_id}:${t.ticker}`));
+  const positions = db
+    .prepare(
+      `SELECT h.account_id, UPPER(h.ticker) as ticker, h.units, pc.price
+       FROM holdings h
+       LEFT JOIN price_cache pc ON UPPER(h.ticker) = UPPER(pc.ticker)
+       WHERE h.units > 0 AND pc.price IS NOT NULL`
+    )
+    .all() as { account_id: string; ticker: string; units: number; price: number }[];
+
+  let terminal = 0;
+  for (const p of positions) {
+    if (tradedKeys.has(`${p.account_id}:${p.ticker}`)) {
+      terminal += p.units * p.price;
+    }
+  }
+  if (terminal > 0) flows.push({ date: new Date(), amount: terminal });
+
+  const rate = xirr(flows);
+  return rate === null ? null : rate * 100;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const period = searchParams.get("period") || "1y";
@@ -211,6 +290,13 @@ export async function GET(request: NextRequest) {
         100
       : null;
 
+  let moneyWeightedReturn: number | null = null;
+  try {
+    moneyWeightedReturn = computeMoneyWeightedReturn(db);
+  } catch {
+    // Optional metric; never fail the endpoint over it.
+  }
+
   return NextResponse.json({
     from: from.toISOString().slice(0, 10),
     to: to.toISOString().slice(0, 10),
@@ -218,5 +304,6 @@ export async function GET(request: NextRequest) {
     perAsset: perAsset.map(({ series: _series, ...rest }) => rest),
     portfolio,
     portfolioReturn,
+    moneyWeightedReturn,
   });
 }

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import NetWorthChart from "@/components/NetWorthChart";
 import SpendingChart from "@/components/SpendingChart";
+import MortgageProjection from "@/components/MortgageProjection";
 
 interface NetWorthData {
   totalNetWorth: number;
@@ -272,6 +273,8 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      <MortgageProjection />
     </div>
   );
 }

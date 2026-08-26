@@ -45,6 +45,46 @@ export async function POST(request: NextRequest) {
   return NextResponse.json(account, { status: 201 });
 }
 
+export async function PUT(request: NextRequest) {
+  const body = await request.json();
+  const { id, name, type, owner, institution, notes, interest_rate, repayment_amount } = body;
+
+  if (!id || !name || !type || !owner) {
+    return NextResponse.json(
+      { error: "id, name, type and owner required" },
+      { status: 400 }
+    );
+  }
+
+  const db = getDb();
+  const result = db
+    .prepare(
+      `UPDATE accounts SET name = ?, type = ?, owner = ?, institution = ?, notes = ?,
+        interest_rate = ?, repayment_amount = ?, updated_at = datetime('now')
+       WHERE id = ?`
+    )
+    .run(
+      name,
+      type,
+      owner,
+      institution || null,
+      notes || null,
+      interest_rate !== undefined && interest_rate !== null && interest_rate !== ""
+        ? parseFloat(interest_rate)
+        : null,
+      repayment_amount !== undefined && repayment_amount !== null && repayment_amount !== ""
+        ? parseFloat(repayment_amount)
+        : null,
+      id
+    );
+
+  if (result.changes === 0) {
+    return NextResponse.json({ error: "Account not found" }, { status: 404 });
+  }
+  const account = db.prepare("SELECT * FROM accounts WHERE id = ?").get(id);
+  return NextResponse.json(account);
+}
+
 export async function DELETE(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");

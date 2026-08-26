@@ -1,10 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import getDb from "@/lib/db";
-import { getQuotes, getQuote, getYahoo } from "@/lib/market";
-
-interface TickerRow {
-  ticker: string;
-}
+import { getQuote, getYahoo } from "@/lib/market";
+import { refreshAllPrices } from "@/lib/portfolio";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -13,57 +10,7 @@ export async function POST(request: NextRequest) {
   const db = getDb();
 
   if (action === "refresh") {
-    const tickers = db
-      .prepare("SELECT DISTINCT UPPER(ticker) as ticker FROM holdings")
-      .all() as TickerRow[];
-
-    if (tickers.length === 0) {
-      return NextResponse.json({ updated: 0 });
-    }
-
-    const tickerList = tickers.map((t) => t.ticker);
-    const quotes = await getQuotes(tickerList);
-
-    const upsert = db.prepare(`
-      INSERT INTO price_cache (ticker, price, currency, change_percent, day_high, day_low, market_cap, dividend_yield, annual_dividend, name, exchange, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-      ON CONFLICT(ticker) DO UPDATE SET
-        price = excluded.price,
-        currency = excluded.currency,
-        change_percent = excluded.change_percent,
-        day_high = excluded.day_high,
-        day_low = excluded.day_low,
-        market_cap = excluded.market_cap,
-        dividend_yield = excluded.dividend_yield,
-        annual_dividend = excluded.annual_dividend,
-        name = excluded.name,
-        exchange = excluded.exchange,
-        updated_at = excluded.updated_at
-    `);
-
-    const batch = db.transaction(() => {
-      for (const [t, q] of Object.entries(quotes)) {
-        upsert.run(
-          t,
-          q.price,
-          q.currency,
-          q.changePercent,
-          q.dayHigh,
-          q.dayLow,
-          q.marketCap,
-          q.dividendYield,
-          q.annualDividend,
-          q.name,
-          q.exchange
-        );
-      }
-    });
-    batch();
-
-    return NextResponse.json({
-      updated: Object.keys(quotes).length,
-      failed: tickerList.filter((t) => !quotes[t]),
-    });
+    return NextResponse.json(await refreshAllPrices(db));
   }
 
   if (action === "lookup" && ticker) {
