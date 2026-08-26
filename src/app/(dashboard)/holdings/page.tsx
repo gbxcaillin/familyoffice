@@ -139,6 +139,15 @@ export default function HoldingsPage() {
   const [sortKey, setSortKey] = useState<string>("ticker");
   const [sortDir, setSortDir] = useState<1 | -1>(1);
 
+  // Section layout (per-user, from Settings)
+  const [sectionOrder, setSectionOrder] = useState<string[]>([
+    "summary", "holdings", "performance", "trades",
+  ]);
+  const orderOf = (id: string) => {
+    const i = sectionOrder.indexOf(id);
+    return i === -1 ? 99 : 10 + i;
+  };
+
   // Performance
   const [perf, setPerf] = useState<PerfData | null>(null);
   const [perfPeriod, setPerfPeriod] = useState<PerfPeriod>("1y");
@@ -181,6 +190,12 @@ export default function HoldingsPage() {
   );
 
   useEffect(() => {
+    fetch("/api/prefs")
+      .then((r) => r.json())
+      .then((p) => {
+        if (Array.isArray(p?.holdingsOrder)) setSectionOrder(p.holdingsOrder);
+      })
+      .catch(() => {});
     Promise.all([
       fetch("/api/holdings").then((r) => r.json()),
       fetch("/api/accounts").then((r) => r.json()),
@@ -381,7 +396,7 @@ export default function HoldingsPage() {
   }
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-8">
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
@@ -422,7 +437,7 @@ export default function HoldingsPage() {
       </div>
 
       {/* Summary cards */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4" style={{ order: orderOf("summary") }}>
         <div className="bg-gbx-charcoal border border-white/5 p-4 sm:p-6 col-span-2 lg:col-span-1">
           <p className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal mb-1">
             Portfolio Value
@@ -489,7 +504,7 @@ export default function HoldingsPage() {
 
       {/* Record trade form */}
       {showTrade && (
-        <div className="bg-white border border-gbx-border p-4 sm:p-6">
+        <div className="bg-white border border-gbx-border p-4 sm:p-6" style={{ order: 1 }}>
           <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal mb-4">
             Record Trade
           </h2>
@@ -660,7 +675,7 @@ export default function HoldingsPage() {
 
       {/* Add holding form */}
       {showAdd && (
-        <div className="bg-white border border-gbx-border p-4 sm:p-6">
+        <div className="bg-white border border-gbx-border p-4 sm:p-6" style={{ order: 2 }}>
           <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal mb-4">
             Add New Holding
           </h2>
@@ -791,13 +806,13 @@ export default function HoldingsPage() {
 
       {/* Holdings table */}
       {holdings.length === 0 ? (
-        <div className="bg-white border border-gbx-border p-12 text-center">
+        <div className="bg-white border border-gbx-border p-12 text-center" style={{ order: orderOf("holdings") }}>
           <p className="text-gbx-muted font-body text-sm">
             No holdings yet. Record a trade or add a holding to start tracking.
           </p>
         </div>
       ) : (
-        <div className="bg-white border border-gbx-border overflow-x-auto">
+        <div className="bg-white border border-gbx-border overflow-x-auto" style={{ order: orderOf("holdings") }}>
           <table className="w-full">
             <thead>
               <tr className="border-b border-gbx-border">
@@ -955,7 +970,7 @@ export default function HoldingsPage() {
 
       {/* Performance */}
       {holdings.length > 0 && (
-        <div className="bg-white border border-gbx-border p-4 sm:p-6">
+        <div className="bg-white border border-gbx-border p-4 sm:p-6" style={{ order: orderOf("performance") }}>
           <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
             <div>
               <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal">
@@ -1168,7 +1183,7 @@ export default function HoldingsPage() {
       )}
 
       {/* Trade history */}
-      <div className="bg-white border border-gbx-border">
+      <div className="bg-white border border-gbx-border" style={{ order: orderOf("trades") }}>
         <div className="px-6 pt-6 pb-4 flex items-baseline justify-between">
           <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal">
             Trade History

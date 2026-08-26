@@ -1,15 +1,24 @@
 "use client";
 
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-const tabs = [
-  { name: "Dashboard", href: "/" },
-  { name: "Accounts", href: "/accounts" },
-  { name: "Holdings", href: "/holdings" },
-  { name: "Spending", href: "/spending" },
-  { name: "Import", href: "/import" },
-  { name: "Documents", href: "/documents" },
+const TAB_DEFS: Record<string, { name: string; href: string }> = {
+  dashboard: { name: "Dashboard", href: "/" },
+  accounts: { name: "Accounts", href: "/accounts" },
+  holdings: { name: "Holdings", href: "/holdings" },
+  spending: { name: "Spending", href: "/spending" },
+  import: { name: "Import", href: "/import" },
+  documents: { name: "Documents", href: "/documents" },
+};
+
+const DEFAULT_TAB_ORDER = [
+  "dashboard",
+  "accounts",
+  "holdings",
+  "spending",
+  "import",
+  "documents",
 ];
 
 export default function DashboardShell({
@@ -22,6 +31,18 @@ export default function DashboardShell({
   const pathname = usePathname();
   const router = useRouter();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [tabOrder, setTabOrder] = useState<string[]>(DEFAULT_TAB_ORDER);
+
+  useEffect(() => {
+    fetch("/api/prefs")
+      .then((r) => r.json())
+      .then((p) => {
+        if (Array.isArray(p?.tabOrder) && p.tabOrder.length > 0) {
+          setTabOrder(p.tabOrder);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   async function handleLogout() {
     setLoggingOut(true);
@@ -29,6 +50,11 @@ export default function DashboardShell({
     router.push("/login");
     router.refresh();
   }
+
+  const tabs = [
+    ...tabOrder.filter((id) => TAB_DEFS[id]).map((id) => TAB_DEFS[id]),
+    { name: "Settings", href: "/settings" },
+  ];
 
   return (
     <div className="min-h-screen bg-gbx-paper">

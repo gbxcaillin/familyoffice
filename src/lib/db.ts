@@ -149,6 +149,12 @@ function initSchema(db: Database.Database) {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS user_prefs (
+      user_id TEXT PRIMARY KEY,
+      prefs TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS snapshots (
       id TEXT PRIMARY KEY,
       date TEXT NOT NULL UNIQUE,

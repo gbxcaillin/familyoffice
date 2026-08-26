@@ -66,8 +66,22 @@ export default function DashboardPage() {
   const [data, setData] = useState<NetWorthData | null>(null);
   const [users, setUsers] = useState({ person1: "Person 1", person2: "Person 2" });
   const [loading, setLoading] = useState(true);
+  const [sectionOrder, setSectionOrder] = useState<string[]>([
+    "stats", "charts", "allocation", "mortgage",
+  ]);
+
+  const orderOf = (id: string) => {
+    const i = sectionOrder.indexOf(id);
+    return i === -1 ? 99 : 10 + i;
+  };
 
   useEffect(() => {
+    fetch("/api/prefs")
+      .then((r) => r.json())
+      .then((p) => {
+        if (Array.isArray(p?.dashboardOrder)) setSectionOrder(p.dashboardOrder);
+      })
+      .catch(() => {});
     fetch("/api/users").then((r) => r.json()).then(setUsers).catch(() => {});
     fetch("/api/networth")
       .then((r) => r.json())
@@ -86,7 +100,7 @@ export default function DashboardPage() {
   if (!data) return null;
 
   return (
-    <div className="space-y-8">
+    <div className="flex flex-col gap-8">
       {/* Page heading */}
       <div>
         <h1 className="font-heading text-3xl font-light text-gbx-charcoal">
@@ -98,7 +112,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Top stat cards */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4" style={{ order: orderOf("stats") }}>
         <div className="bg-gbx-charcoal border border-white/5 p-4 sm:p-6 col-span-2 lg:col-span-1">
           <p className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal mb-1">
             Total Net Worth
@@ -134,7 +148,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Charts row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ order: orderOf("charts") }}>
         {/* Net worth trend */}
         <div className="bg-white border border-gbx-border p-6">
           <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal mb-4">
@@ -153,7 +167,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Allocation + Cash flow */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" style={{ order: orderOf("allocation") }}>
         {/* Asset allocation by type */}
         <div className="bg-white border border-gbx-border p-6">
           <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal mb-4">
@@ -274,7 +288,9 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <MortgageProjection />
+      <div className="space-y-8" style={{ order: orderOf("mortgage") }}>
+        <MortgageProjection />
+      </div>
     </div>
   );
 }
