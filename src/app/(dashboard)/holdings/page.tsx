@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import NetWorthChart from "@/components/NetWorthChart";
 
 interface Holding {
@@ -134,6 +134,10 @@ export default function HoldingsPage() {
     trade_date: new Date().toISOString().slice(0, 10),
     notes: "",
   });
+
+  // Table sorting
+  const [sortKey, setSortKey] = useState<string>("ticker");
+  const [sortDir, setSortDir] = useState<1 | -1>(1);
 
   // Performance
   const [perf, setPerf] = useState<PerfData | null>(null);
@@ -336,6 +340,33 @@ export default function HoldingsPage() {
     0
   );
   const lastUpdated = holdings.find((h) => h.price_updated_at)?.price_updated_at;
+
+  const STRING_SORT_KEYS = ["ticker", "display_name", "account_name"];
+
+  function toggleSort(key: string) {
+    if (sortKey === key) {
+      setSortDir((d) => (d === 1 ? -1 : 1));
+    } else {
+      setSortKey(key);
+      // Strings read best ascending; numbers best largest-first.
+      setSortDir(STRING_SORT_KEYS.includes(key) ? 1 : -1);
+    }
+  }
+
+  const sortedHoldings = useMemo(() => {
+    const arr = [...holdings];
+    const isString = STRING_SORT_KEYS.includes(sortKey);
+    arr.sort((a, b) => {
+      const av = (a as unknown as Record<string, unknown>)[sortKey];
+      const bv = (b as unknown as Record<string, unknown>)[sortKey];
+      if (av === null || av === undefined) return 1;
+      if (bv === null || bv === undefined) return -1;
+      if (isString) return String(av).localeCompare(String(bv)) * sortDir;
+      return (Number(av) - Number(bv)) * sortDir;
+    });
+    return arr;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [holdings, sortKey, sortDir]);
 
   const inputClass =
     "w-full px-3 py-2 border border-gbx-border text-sm font-data text-gbx-charcoal focus:border-gbx-teal focus:outline-none";
@@ -771,30 +802,39 @@ export default function HoldingsPage() {
             <thead>
               <tr className="border-b border-gbx-border">
                 {([
-                  ["Ticker", ""],
-                  ["Name", "hidden xl:table-cell"],
-                  ["Account", "hidden lg:table-cell"],
-                  ["Units", "hidden sm:table-cell"],
-                  ["Price", "hidden md:table-cell"],
-                  ["Day %", "hidden lg:table-cell"],
-                  ["Market Value", ""],
-                  ["Cost Basis", "hidden xl:table-cell"],
-                  ["Gain/Loss", ""],
-                  ["Div Yield", "hidden xl:table-cell"],
-                  ["Annual Income", "hidden md:table-cell"],
-                  ["", ""],
-                ] as [string, string][]).map(([h, cls], i) => (
+                  ["Ticker", "", "ticker"],
+                  ["Name", "hidden xl:table-cell", "display_name"],
+                  ["Account", "hidden lg:table-cell", "account_name"],
+                  ["Units", "hidden sm:table-cell", "units"],
+                  ["Price", "hidden md:table-cell", "cached_price"],
+                  ["Day %", "hidden lg:table-cell", "cached_change_percent"],
+                  ["Market Value", "", "market_value"],
+                  ["Cost Basis", "hidden xl:table-cell", "total_cost"],
+                  ["Gain/Loss", "", "gain_loss_percent"],
+                  ["Div Yield", "hidden xl:table-cell", "cached_dividend_yield"],
+                  ["Annual Income", "hidden md:table-cell", "annual_income"],
+                  ["", "", ""],
+                ] as [string, string, string][]).map(([h, cls, key], i) => (
                   <th
                     key={i}
-                    className={`px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted ${cls}`}
+                    onClick={key ? () => toggleSort(key) : undefined}
+                    className={`px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] font-body font-medium ${cls} ${
+                      key
+                        ? "cursor-pointer select-none hover:text-gbx-charcoal " +
+                          (sortKey === key ? "text-gbx-teal" : "text-gbx-muted")
+                        : "text-gbx-muted"
+                    }`}
                   >
                     {h}
+                    {key && sortKey === key && (
+                      <span className="ml-1">{sortDir === 1 ? "\u25B2" : "\u25BC"}</span>
+                    )}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {holdings.map((h) => (
+              {sortedHoldings.map((h) => (
                 <tr
                   key={h.id}
                   className="border-b border-gbx-border/50 hover:bg-gbx-soft/30 transition-colors"

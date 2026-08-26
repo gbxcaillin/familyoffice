@@ -44,8 +44,29 @@ function formatDate(dateStr: string): string {
   });
 }
 
+// Same closed-form amortisation the API uses, for the custom-amount input.
+function amortise(
+  balance: number,
+  annualRatePercent: number,
+  monthlyPayment: number
+): { months: number; totalInterest: number } | null {
+  const r = annualRatePercent / 100 / 12;
+  if (balance <= 0 || monthlyPayment <= 0) return null;
+  if (r <= 0) return { months: balance / monthlyPayment, totalInterest: 0 };
+  if (monthlyPayment <= balance * r) return null;
+  const months = -Math.log(1 - (r * balance) / monthlyPayment) / Math.log(1 + r);
+  return { months, totalInterest: monthlyPayment * months - balance };
+}
+
+function payoffDateFromMonths(months: number): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() + Math.ceil(months));
+  return d.toISOString().slice(0, 10);
+}
+
 export default function MortgageProjection() {
   const [loans, setLoans] = useState<Loan[]>([]);
+  const [customExtra, setCustomExtra] = useState<Record<string, string>>({});
 
   useEffect(() => {
     fetch("/api/mortgage")
@@ -60,6 +81,11 @@ export default function MortgageProjection() {
     <>
       {loans.map((loan) => {
         const base = loan.scenarios.find((s) => s.extra === 0);
+        const extraValue = parseFloat(customExtra[loan.id] || "");
+        const custom =
+          base && extraValue > 0
+            ? amortise(loan.balance, loan.interestRate, loan.repayment + extraValue)
+            : null;
         return (
           <div key={loan.id} className="bg-white border border-gbx-border p-4 sm:p-6">
             <div className="flex items-baseline justify-between flex-wrap gap-2 mb-4">
@@ -166,6 +192,52 @@ export default function MortgageProjection() {
                         ))}
                     </tbody>
                   </table>
+                </div>
+
+                <div className="mt-4 flex items-end gap-3 flex-wrap">
+                  <div>
+                    <label className="block text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted mb-1.5">
+                      Try your own extra ($/month)
+                    </label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      value={customExtra[loan.id] || ""}
+                      onChange={(e) =>
+                        setCustomExtra((c) => ({ ...c, [loan.id]: e.target.value }))
+                      }
+                      placeholder="e.g. 750"
+                      className="w-36 bg-white border border-gbx-border px-3 py-2 text-sm font-data text-gbx-charcoal focus:outline-none focus:border-gbx-teal transition-colors"
+                    />
+                  </div>
+                  {base && custom && (
+                    <div className="flex-1 min-w-[240px] bg-gbx-soft/60 border border-gbx-border px-4 py-2.5">
+                      <p className="text-sm font-body text-gbx-charcoal">
+                        <span className="font-data text-gbx-teal">
+                          +{formatCurrency(extraValue)}/mo
+                        </span>{" "}
+                        pays it off{" "}
+                        <span className="font-data">
+                          {formatDate(payoffDateFromMonths(custom.months))}
+                        </span>{" "}
+                        — saves{" "}
+                        <span className="font-data text-gbx-teal">
+                          {formatYears(base.months - custom.months)}
+                        </span>{" "}
+                        and{" "}
+                        <span className="font-data text-gbx-teal">
+                          {formatCurrency(base.totalInterest - custom.totalInterest)}
+                        </span>{" "}
+                        in interest
+                      </p>
+                    </div>
+                  )}
+                  {base && extraValue > 0 && !custom && (
+                    <p className="text-sm text-red-600 font-body">
+                      That amount doesn&apos;t change the result — check the figure.
+                    </p>
+                  )}
                 </div>
               </div>
             )}
