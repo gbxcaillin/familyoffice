@@ -44,19 +44,108 @@ function StatCard({
   label,
   value,
   sub,
+  active,
+  onClick,
 }: {
   label: string;
   value: string;
   sub?: string;
+  active?: boolean;
+  onClick?: () => void;
 }) {
   return (
-    <div className="bg-white border border-gbx-border p-4 sm:p-6">
+    <button
+      onClick={onClick}
+      className={`text-left bg-white border p-4 sm:p-6 transition-colors ${
+        active ? "border-gbx-teal" : "border-gbx-border hover:border-gbx-teal/50"
+      }`}
+    >
       <p className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted mb-1">
         {label}
       </p>
       <p className="font-data text-lg sm:text-2xl text-gbx-charcoal break-words">{value}</p>
-      {sub && (
-        <p className="text-xs text-gbx-muted font-body mt-1">{sub}</p>
+      {sub && <p className="text-xs text-gbx-muted font-body mt-1">{sub}</p>}
+    </button>
+  );
+}
+
+interface LineItem {
+  label: string;
+  sub: string;
+  value: number;
+  kind: "account" | "holding";
+}
+interface Breakdown {
+  total: { items: LineItem[]; total: number };
+  person1: { items: LineItem[]; total: number };
+  person2: { items: LineItem[]; total: number };
+  joint: { items: LineItem[]; total: number };
+}
+
+function BreakdownPanel({
+  title,
+  items,
+  onClose,
+}: {
+  title: string;
+  items: LineItem[];
+  onClose: () => void;
+}) {
+  const total = items.reduce((s, i) => s + i.value, 0);
+  return (
+    <div className="bg-white border border-gbx-teal/40 p-4 sm:p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal">
+          {title} — what it&apos;s made of
+        </h3>
+        <button
+          onClick={onClose}
+          className="text-xs text-gbx-muted hover:text-gbx-charcoal font-body"
+        >
+          Close ✕
+        </button>
+      </div>
+      {items.length === 0 ? (
+        <p className="text-sm text-gbx-muted font-body">Nothing in this group yet.</p>
+      ) : (
+        <div className="divide-y divide-gbx-border/60">
+          {items.map((it, i) => (
+            <div key={i} className="flex items-center justify-between py-2 gap-4">
+              <div className="min-w-0">
+                <p className="text-sm font-body text-gbx-charcoal truncate">
+                  {it.label}
+                  {it.kind === "holding" && (
+                    <span className="text-[10px] uppercase tracking-[0.1em] text-gbx-muted ml-2">
+                      holding
+                    </span>
+                  )}
+                </p>
+                <p className="text-[11px] text-gbx-muted font-body truncate">{it.sub}</p>
+              </div>
+              <p
+                className={`font-data text-sm whitespace-nowrap ${
+                  it.value < 0 ? "text-red-600" : "text-gbx-charcoal"
+                }`}
+              >
+                {it.value < 0 ? "-" : ""}
+                {formatCurrency(Math.abs(it.value))}
+              </p>
+            </div>
+          ))}
+          <div className="flex items-center justify-between py-3 mt-1">
+            <p className="text-xs uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">
+              Total
+            </p>
+            <p
+              className={`font-data text-base font-bold ${
+                total < 0 ? "text-red-600" : "text-gbx-charcoal"
+              }`}
+            >
+              {total < 0 ? "-" : ""}
+              {formatCurrency(Math.abs(total))}
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -69,6 +158,20 @@ export default function DashboardPage() {
   const [sectionOrder, setSectionOrder] = useState<string[]>([
     "stats", "charts", "allocation", "mortgage",
   ]);
+  const [breakdown, setBreakdown] = useState<Breakdown | null>(null);
+  const [selected, setSelected] = useState<
+    "total" | "person1" | "person2" | "joint" | null
+  >(null);
+
+  function pick(bucket: "total" | "person1" | "person2" | "joint") {
+    setSelected((s) => (s === bucket ? null : bucket));
+    if (!breakdown) {
+      fetch("/api/networth/breakdown")
+        .then((r) => r.json())
+        .then(setBreakdown)
+        .catch(() => {});
+    }
+  }
 
   const orderOf = (id: string) => {
     const i = sectionOrder.indexOf(id);
@@ -112,39 +215,68 @@ export default function DashboardPage() {
       </div>
 
       {/* Top stat cards */}
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4" style={{ order: orderOf("stats") }}>
-        <div className="bg-gbx-charcoal border border-white/5 p-4 sm:p-6 col-span-2 lg:col-span-1">
-          <p className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal mb-1">
-            Total Net Worth
-          </p>
-          <p className="font-data text-2xl sm:text-3xl text-white break-words">
-            {formatCurrency(data.totalNetWorth)}
-          </p>
-          <p className="text-xs text-white/40 font-body mt-1">
-            {data.totalLiabilities > 0
-              ? `Assets ${formatCurrency(data.totalAssets)} · Liabilities ${formatCurrency(data.totalLiabilities)}`
-              : `Across ${data.accountCount} accounts${
-                  data.holdingsTotal > 0
-                    ? ` · ${formatCurrency(data.holdingsTotal)} in holdings`
-                    : ""
-                }`}
-          </p>
+      <div className="flex flex-col gap-4" style={{ order: orderOf("stats") }}>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+          <button
+            onClick={() => pick("total")}
+            className={`text-left bg-gbx-charcoal border p-4 sm:p-6 col-span-2 lg:col-span-1 transition-colors ${
+              selected === "total" ? "border-gbx-teal" : "border-white/5 hover:border-gbx-teal/40"
+            }`}
+          >
+            <p className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal mb-1">
+              Total Net Worth
+            </p>
+            <p className="font-data text-2xl sm:text-3xl text-white break-words">
+              {formatCurrency(data.totalNetWorth)}
+            </p>
+            <p className="text-xs text-white/40 font-body mt-1">
+              {data.totalLiabilities > 0
+                ? `Assets ${formatCurrency(data.totalAssets)} · Liabilities ${formatCurrency(data.totalLiabilities)}`
+                : `Across ${data.accountCount} accounts${
+                    data.holdingsTotal > 0
+                      ? ` · ${formatCurrency(data.holdingsTotal)} in holdings`
+                      : ""
+                  }`}
+            </p>
+          </button>
+          <StatCard
+            label={users.person1}
+            value={formatCurrency(data.person1Total)}
+            sub="Tap to see breakdown"
+            active={selected === "person1"}
+            onClick={() => pick("person1")}
+          />
+          <StatCard
+            label={users.person2}
+            value={formatCurrency(data.person2Total)}
+            sub="Tap to see breakdown"
+            active={selected === "person2"}
+            onClick={() => pick("person2")}
+          />
+          <StatCard
+            label="Joint"
+            value={formatCurrency(data.jointTotal)}
+            sub="Tap to see breakdown"
+            active={selected === "joint"}
+            onClick={() => pick("joint")}
+          />
         </div>
-        <StatCard
-          label={users.person1}
-          value={formatCurrency(data.person1Total)}
-          sub="Individual holdings"
-        />
-        <StatCard
-          label={users.person2}
-          value={formatCurrency(data.person2Total)}
-          sub="Individual holdings"
-        />
-        <StatCard
-          label="Joint"
-          value={formatCurrency(data.jointTotal)}
-          sub="Shared accounts"
-        />
+
+        {selected && breakdown && (
+          <BreakdownPanel
+            title={
+              selected === "total"
+                ? "Total net worth"
+                : selected === "joint"
+                  ? "Joint"
+                  : selected === "person1"
+                    ? users.person1
+                    : users.person2
+            }
+            items={breakdown[selected].items}
+            onClose={() => setSelected(null)}
+          />
+        )}
       </div>
 
       {/* Charts row */}
