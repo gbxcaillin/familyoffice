@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import getDb from "@/lib/db";
-import { computeNetWorth } from "@/lib/portfolio";
+import { computeNetWorth, recordSnapshot } from "@/lib/portfolio";
 
 interface BalanceRow {
   date: string;
@@ -15,26 +15,16 @@ interface SpendRow {
 export async function GET() {
   const db = getDb();
 
-  const totals = computeNetWorth(db);
+  // Record today's true net worth so the trend accumulates a correct point
+  // each day the dashboard is viewed (the daily cron does this too).
+  const totals = recordSnapshot(db);
 
-  // Daily snapshots (written by the cron job) are the preferred trend source;
-  // manual balance history is the fallback for the period before they existed.
-  const snapshotHistory = db.prepare(`
+  // The trend is built solely from snapshots — each is a full net worth
+  // valuation for its day, so the line is always real net worth over time.
+  const balanceHistory = db.prepare(`
     SELECT date, total_net_worth as total
     FROM snapshots
     ORDER BY date ASC
-  `).all() as BalanceRow[];
-
-  const balanceHistory = db.prepare(`
-    SELECT b.date, SUM(b.balance) as total
-    FROM balances b
-    INNER JOIN (
-      SELECT account_id, date, MAX(rowid) as max_rowid
-      FROM balances
-      GROUP BY account_id, date
-    ) latest ON b.account_id = latest.account_id AND b.date = latest.date AND b.rowid = latest.max_rowid
-    GROUP BY b.date
-    ORDER BY b.date ASC
   `).all() as BalanceRow[];
 
   const recentSpending = db.prepare(`
@@ -59,8 +49,7 @@ export async function GET() {
 
   return NextResponse.json({
     ...totals,
-    balanceHistory:
-      snapshotHistory.length >= 2 ? snapshotHistory : balanceHistory,
+    balanceHistory,
     recentSpending,
     recentIncome: recentIncome?.total || 0,
     recentExpenses: recentExpenses?.total || 0,

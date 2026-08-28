@@ -109,13 +109,13 @@ export function computeNetWorth(db: Database.Database): NetWorthTotals {
 
   const holdingValues = db
     .prepare(
-      `SELECT a.owner as account_owner, a.type as account_type,
+      `SELECT COALESCE(h.owner, a.owner) as account_owner, a.type as account_type,
         SUM(h.units * pc.price) as market_value
        FROM holdings h
        JOIN accounts a ON h.account_id = a.id
        LEFT JOIN price_cache pc ON UPPER(h.ticker) = UPPER(pc.ticker)
        WHERE pc.price IS NOT NULL
-       GROUP BY a.owner, a.type`
+       GROUP BY COALESCE(h.owner, a.owner), a.type`
     )
     .all() as { account_owner: string; account_type: string; market_value: number | null }[];
 

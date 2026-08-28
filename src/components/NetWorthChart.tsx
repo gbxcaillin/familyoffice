@@ -36,10 +36,12 @@ export default function NetWorthChart({
   data: DataPoint[];
   label?: string;
 }) {
-  if (data.length === 0) {
+  if (data.length < 2) {
     return (
-      <div className="h-64 flex items-center justify-center text-gbx-muted text-sm font-body">
-        Add balance snapshots to see your net worth trend
+      <div className="h-64 flex items-center justify-center text-center text-gbx-muted text-sm font-body px-6">
+        {label === "Net Worth"
+          ? "Your net worth trend builds one point per day — the line appears once there are a couple of days to plot."
+          : "Not enough history to plot yet."}
       </div>
     );
   }

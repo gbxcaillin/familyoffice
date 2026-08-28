@@ -7,6 +7,8 @@ interface HoldingRow {
   account_id: string;
   account_name: string;
   account_owner: string;
+  owner: string | null;
+  effective_owner: string;
   ticker: string;
   name: string | null;
   units: number;
@@ -29,6 +31,7 @@ export async function GET() {
       `SELECT h.*,
         a.name as account_name,
         a.owner as account_owner,
+        COALESCE(h.owner, a.owner) as effective_owner,
         pc.price as cached_price,
         pc.change_percent as cached_change_percent,
         pc.dividend_yield as cached_dividend_yield,
@@ -72,7 +75,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { account_id, ticker, name, units, cost_basis, currency, notes } = body;
+  const { account_id, ticker, name, units, cost_basis, currency, notes, owner } = body;
 
   if (!account_id || !ticker || units === undefined) {
     return NextResponse.json(
@@ -85,8 +88,8 @@ export async function POST(request: NextRequest) {
   const id = `hld_${randomUUID().slice(0, 8)}`;
 
   db.prepare(
-    `INSERT INTO holdings (id, account_id, ticker, name, units, cost_basis, currency, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO holdings (id, account_id, ticker, name, units, cost_basis, currency, notes, owner)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     account_id,
@@ -95,7 +98,8 @@ export async function POST(request: NextRequest) {
     parseFloat(units),
     parseFloat(cost_basis || "0"),
     currency || "AUD",
-    notes || null
+    notes || null,
+    owner || null
   );
 
   const holding = db.prepare("SELECT * FROM holdings WHERE id = ?").get(id);
@@ -104,17 +108,40 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   const body = await request.json();
-  const { id, units, cost_basis, notes } = body;
+  const { id, units, cost_basis, notes, owner } = body;
 
   if (!id) {
     return NextResponse.json({ error: "ID required" }, { status: 400 });
   }
 
   const db = getDb();
-  db.prepare(
-    `UPDATE holdings SET units = ?, cost_basis = ?, notes = ?, updated_at = datetime('now')
-     WHERE id = ?`
-  ).run(parseFloat(units), parseFloat(cost_basis || "0"), notes || null, id);
+  // Update only the fields that were supplied, so a single-field change
+  // (e.g. just the owner) doesn't wipe the rest.
+  const sets: string[] = [];
+  const vals: unknown[] = [];
+  if (units !== undefined) {
+    sets.push("units = ?");
+    vals.push(parseFloat(units));
+  }
+  if (cost_basis !== undefined) {
+    sets.push("cost_basis = ?");
+    vals.push(parseFloat(cost_basis || "0"));
+  }
+  if (notes !== undefined) {
+    sets.push("notes = ?");
+    vals.push(notes || null);
+  }
+  if (owner !== undefined) {
+    // "" or "inherit" clears the override so the holding follows its account.
+    sets.push("owner = ?");
+    vals.push(owner && owner !== "inherit" ? owner : null);
+  }
+  if (sets.length === 0) {
+    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+  }
+  sets.push("updated_at = datetime('now')");
+  vals.push(id);
+  db.prepare(`UPDATE holdings SET ${sets.join(", ")} WHERE id = ?`).run(...vals);
 
   return NextResponse.json({ ok: true });
 }

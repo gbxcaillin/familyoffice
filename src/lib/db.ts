@@ -182,6 +182,14 @@ function initSchema(db: Database.Database) {
     }
   }
 
+  // Optional per-holding owner override; when null the holding inherits its
+  // account's owner.
+  try {
+    db.exec("ALTER TABLE holdings ADD COLUMN owner TEXT");
+  } catch {
+    // Column already exists.
+  }
+
   const catCount = db.prepare("SELECT COUNT(*) as count FROM categories").get() as { count: number };
   if (catCount.count === 0) {
     const insert = db.prepare("INSERT INTO categories (id, name, type, color) VALUES (?, ?, ?, ?)");

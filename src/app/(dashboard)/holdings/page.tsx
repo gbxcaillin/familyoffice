@@ -8,6 +8,8 @@ interface Holding {
   account_id: string;
   account_name: string;
   account_owner: string;
+  owner: string | null;
+  effective_owner: string;
   ticker: string;
   name: string | null;
   units: number;
@@ -115,7 +117,12 @@ export default function HoldingsPage() {
     cost_basis: "",
     currency: "AUD",
     notes: "",
+    owner: "inherit",
   });
+
+  const [users, setUsers] = useState({ person1: "Person 1", person2: "Person 2" });
+  const ownerLabel = (o: string) =>
+    o === "joint" ? "Joint" : o === "person1" ? users.person1 : users.person2;
 
   // Trades
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -196,6 +203,7 @@ export default function HoldingsPage() {
         if (Array.isArray(p?.holdingsOrder)) setSectionOrder(p.holdingsOrder);
       })
       .catch(() => {});
+    fetch("/api/users").then((r) => r.json()).then(setUsers).catch(() => {});
     Promise.all([
       fetch("/api/holdings").then((r) => r.json()),
       fetch("/api/accounts").then((r) => r.json()),
@@ -273,6 +281,7 @@ export default function HoldingsPage() {
         ...form,
         units: parseFloat(form.units),
         cost_basis: parseFloat(form.cost_basis || "0"),
+        owner: form.owner === "inherit" ? null : form.owner,
       }),
     });
 
@@ -284,8 +293,18 @@ export default function HoldingsPage() {
       cost_basis: "",
       currency: "AUD",
       notes: "",
+      owner: "inherit",
     });
     setShowAdd(false);
+    await loadHoldings();
+  }
+
+  async function handleOwnerChange(id: string, owner: string) {
+    await fetch("/api/holdings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, owner }),
+    });
     await loadHoldings();
   }
 
@@ -779,6 +798,22 @@ export default function HoldingsPage() {
               </div>
 
               <div>
+                <label className={labelClass}>Owner</label>
+                <select
+                  value={form.owner}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, owner: e.target.value }))
+                  }
+                  className="w-full px-3 py-2 border border-gbx-border bg-white text-sm font-body text-gbx-charcoal focus:border-gbx-teal focus:outline-none"
+                >
+                  <option value="inherit">Same as account</option>
+                  <option value="person1">{users.person1}</option>
+                  <option value="person2">{users.person2}</option>
+                  <option value="joint">Joint</option>
+                </select>
+              </div>
+
+              <div>
                 <label className={labelClass}>Notes</label>
                 <input
                   type="text"
@@ -820,6 +855,7 @@ export default function HoldingsPage() {
                   ["Ticker", "", "ticker"],
                   ["Name", "hidden xl:table-cell", "display_name"],
                   ["Account", "hidden lg:table-cell", "account_name"],
+                  ["Owner", "hidden lg:table-cell", "effective_owner"],
                   ["Units", "hidden sm:table-cell", "units"],
                   ["Price", "hidden md:table-cell", "cached_price"],
                   ["Day %", "hidden lg:table-cell", "cached_change_percent"],
@@ -862,6 +898,23 @@ export default function HoldingsPage() {
                   </td>
                   <td className="hidden lg:table-cell px-4 py-3 text-xs font-body text-gbx-muted">
                     {h.account_name}
+                  </td>
+                  <td className="hidden lg:table-cell px-4 py-3">
+                    <select
+                      value={h.owner || "inherit"}
+                      onChange={(e) => handleOwnerChange(h.id, e.target.value)}
+                      className={`border border-gbx-border text-xs font-body px-2 py-1 bg-white ${
+                        h.owner ? "text-gbx-charcoal" : "text-gbx-muted"
+                      }`}
+                      title="Who this holding belongs to"
+                    >
+                      <option value="inherit">
+                        {ownerLabel(h.account_owner)} (from account)
+                      </option>
+                      <option value="person1">{users.person1}</option>
+                      <option value="person2">{users.person2}</option>
+                      <option value="joint">Joint</option>
+                    </select>
                   </td>
                   <td className="hidden sm:table-cell px-4 py-3 font-data text-sm text-gbx-charcoal">
                     {h.units.toLocaleString()}
@@ -930,6 +983,7 @@ export default function HoldingsPage() {
                   Totals
                 </td>
                 <td className="hidden xl:table-cell" />
+                <td className="hidden lg:table-cell" />
                 <td className="hidden lg:table-cell" />
                 <td className="hidden sm:table-cell" />
                 <td className="hidden md:table-cell" />

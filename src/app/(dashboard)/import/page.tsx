@@ -506,25 +506,18 @@ export default function ImportPage() {
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className={labelClass}>What are you importing?</label>
-            <div className="flex border border-gbx-border">
-              {(["transactions", "trades", "holdings"] as Mode[]).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  onClick={() => {
-                    setMode(m);
-                    reset();
-                  }}
-                  className={`flex-1 py-2.5 text-[11px] uppercase tracking-[0.12em] font-body font-medium transition-colors ${
-                    mode === m
-                      ? "bg-gbx-teal text-white"
-                      : "bg-white text-gbx-muted hover:text-gbx-charcoal"
-                  }`}
-                >
-                  {m}
-                </button>
-              ))}
-            </div>
+            <select
+              className={inputClass}
+              value={mode}
+              onChange={(e) => {
+                setMode(e.target.value as Mode);
+                reset();
+              }}
+            >
+              <option value="transactions">Bank transactions</option>
+              <option value="trades">Trade history (buys / sells)</option>
+              <option value="holdings">Holdings valuation</option>
+            </select>
           </div>
 
           <div>
