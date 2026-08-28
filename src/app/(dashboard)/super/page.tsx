@@ -128,6 +128,7 @@ interface FormState {
   contrib_tax: string;
   feed_url: string;
   feed_path: string;
+  last_contrib_date: string;
 }
 
 const EMPTY_FORM: FormState = {
@@ -147,6 +148,7 @@ const EMPTY_FORM: FormState = {
   contrib_tax: "15",
   feed_url: "",
   feed_path: "",
+  last_contrib_date: "",
 };
 
 export default function SuperPage() {
@@ -201,6 +203,7 @@ export default function SuperPage() {
       contrib_tax: a.contrib_tax != null ? (a.contrib_tax * 100).toString() : "15",
       feed_url: a.feed_url || "",
       feed_path: a.feed_path || "",
+      last_contrib_date: a.unit_price_date || "",
     });
     setShowForm(true);
   }
@@ -226,6 +229,7 @@ export default function SuperPage() {
       contrib_tax: form.contrib_tax !== "" ? parseFloat(form.contrib_tax) / 100 : "",
       feed_url: form.feed_url,
       feed_path: form.feed_path,
+      last_contrib_date: form.last_contrib_date,
     };
     await fetch("/api/super", {
       method: editId ? "PUT" : "POST",
@@ -383,12 +387,21 @@ export default function SuperPage() {
                     </select>
                   </div>
                   <div>
-                    <label className={labelClass}>Extra / Salary Sacrifice ($ per pay)</label>
-                    <input type="number" step="0.01" className={inputClass} value={form.extra_per_period} onChange={(e) => setForm({ ...form, extra_per_period: e.target.value })} placeholder="0" />
+                    <label className={labelClass}>
+                      {form.contrib_method === "fixed"
+                        ? "Contribution $ per pay"
+                        : "Extra / Salary Sacrifice ($ per pay)"}
+                    </label>
+                    <input type="number" step="0.01" className={inputClass} value={form.extra_per_period} onChange={(e) => setForm({ ...form, extra_per_period: e.target.value })} placeholder={form.contrib_method === "fixed" ? "e.g. 1264.46" : "0"} />
                   </div>
                   <div>
                     <label className={labelClass}>Contributions Tax %</label>
                     <input type="number" step="0.1" className={inputClass} value={form.contrib_tax} onChange={(e) => setForm({ ...form, contrib_tax: e.target.value })} placeholder="15" />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Last Payment Date</label>
+                    <input type="date" className={inputClass} value={form.last_contrib_date} onChange={(e) => setForm({ ...form, last_contrib_date: e.target.value })} />
+                    <p className="text-[10px] text-gbx-muted font-body mt-1">Contributions accrue after this date; the balance above is assumed current to it.</p>
                   </div>
                 </>
               )}

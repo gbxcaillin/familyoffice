@@ -138,6 +138,7 @@ export async function POST(request: NextRequest) {
     basket,
     feed_url,
     feed_path,
+    last_contrib_date,
   } = body;
 
   if (!name || !owner) {
@@ -212,7 +213,9 @@ export async function POST(request: NextRequest) {
     contrib_tax !== undefined && contrib_tax !== null && contrib_tax !== ""
       ? parseFloat(contrib_tax)
       : 0.15,
-    today
+    // Contributions accrue AFTER this date; contributions up to it are assumed
+    // already reflected in the entered balance. Defaults to today.
+    last_contrib_date || today
   );
 
   // Seed today's balance immediately so the account has a value before the
@@ -277,7 +280,11 @@ export async function PUT(request: NextRequest) {
     const bal = num(body.balance, (cfg.units ?? 0) * (cfg.unit_price ?? 1)) ?? 0;
     units = unitPrice > 0 ? bal / unitPrice : 0;
     unitPriceDate = today;
-    lastContrib = today; // avoid double-counting past contributions after re-anchor
+    // Contributions up to the entered balance are already reflected in it, so
+    // accrue only after the last payment date (defaults to today).
+    lastContrib = (body.last_contrib_date as string) || today;
+  } else if (typeof body.last_contrib_date === "string" && body.last_contrib_date) {
+    lastContrib = body.last_contrib_date;
   }
 
   const legs: BasketLeg[] = Array.isArray(body.basket)
