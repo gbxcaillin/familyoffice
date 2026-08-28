@@ -14,7 +14,7 @@ interface Category {
   type: string;
 }
 
-type Mode = "transactions" | "trades";
+type Mode = "transactions" | "trades" | "holdings";
 
 interface TxnRow {
   include: boolean;
@@ -32,6 +32,15 @@ interface TradeRow {
   units: number;
   price: number;
   fees: number;
+}
+
+interface HoldingRow {
+  include: boolean;
+  ticker: string;
+  name: string;
+  units: number;
+  price: number;
+  value: number;
 }
 
 // Minimal CSV parser: quoted fields, escaped quotes, CRLF.
@@ -159,6 +168,9 @@ export default function ImportPage() {
   const [fileName, setFileName] = useState("");
   const [txnRows, setTxnRows] = useState<TxnRow[]>([]);
   const [tradeRows, setTradeRows] = useState<TradeRow[]>([]);
+  const [holdingRows, setHoldingRows] = useState<HoldingRow[]>([]);
+  const [cashBalance, setCashBalance] = useState<number | null>(null);
+  const [suffix, setSuffix] = useState(".AX");
   const [parseError, setParseError] = useState("");
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<string | null>(null);
@@ -176,6 +188,8 @@ export default function ImportPage() {
   function reset() {
     setTxnRows([]);
     setTradeRows([]);
+    setHoldingRows([]);
+    setCashBalance(null);
     setParseError("");
     setResult(null);
     setFileName("");
@@ -193,7 +207,8 @@ export default function ImportPage() {
           return;
         }
         if (mode === "transactions") parseTransactions(rows);
-        else parseTrades(rows);
+        else if (mode === "trades") parseTrades(rows);
+        else parseHoldings(rows);
       } catch {
         setParseError("Could not parse that file as CSV.");
       }
@@ -318,6 +333,79 @@ export default function ImportPage() {
     setTradeRows(parsed);
   }
 
+  function parseHoldings(rows: string[][]) {
+    const first = rows[0];
+    const headerish =
+      first.some((c) => /[a-z]/i.test(c)) &&
+      parseNumber(first[0]) === null &&
+      !/^(cash|[A-Z0-9]{2,6})$/.test(first[0].trim());
+
+    let tickerCol = 0;
+    let nameCol = 1;
+    let priceCol = 2;
+    let unitsCol = 3;
+    let valueCol = 4;
+    let dataRows = rows;
+
+    if (headerish) {
+      tickerCol = guessColumn(first, ["ticker", "symbol", "code", "security"]);
+      nameCol = guessColumn(first, ["name", "description"]);
+      priceCol = guessColumn(first, ["price", "last", "market price"]);
+      unitsCol = guessColumn(first, ["units", "quantity", "qty", "shares", "holding"]);
+      valueCol = guessColumn(first, ["value", "market value", "balance"]);
+      dataRows = rows.slice(1);
+      if (tickerCol === -1 || unitsCol === -1) {
+        setParseError(
+          "Couldn't recognise the columns. Expected Ticker, Units and (optionally) Price and Value."
+        );
+        return;
+      }
+    }
+
+    const parsed: HoldingRow[] = [];
+    let cash: number | null = null;
+    for (const row of dataRows) {
+      const rawTicker = (row[tickerCol] || "").trim();
+      if (!rawTicker) continue;
+      const value = valueCol !== -1 ? parseNumber(row[valueCol] || "") : null;
+
+      // A CASH line is the account's cash balance, not a holding.
+      if (/^cash$/i.test(rawTicker)) {
+        if (value !== null) cash = value;
+        continue;
+      }
+
+      const units = parseNumber(row[unitsCol] || "");
+      const price = priceCol !== -1 ? parseNumber(row[priceCol] || "") : null;
+      if (!units || units <= 0) continue;
+
+      parsed.push({
+        include: true,
+        ticker: rawTicker.toUpperCase(),
+        name: (row[nameCol] || "").trim(),
+        units,
+        // Cost basis is unknown from a valuation file; seed with the shown
+        // price so gain/loss starts near zero rather than a false +100%.
+        price: price ?? 0,
+        value: value ?? (price ? price * units : 0),
+      });
+    }
+
+    if (parsed.length === 0) {
+      setParseError("No usable holdings found in that file.");
+      return;
+    }
+    setHoldingRows(parsed);
+    setCashBalance(cash);
+  }
+
+  function applySuffix(ticker: string): string {
+    if (suffix === "" || ticker.includes(".") || ticker.includes("-")) {
+      return ticker;
+    }
+    return ticker + suffix;
+  }
+
   async function handleImport() {
     if (!accountId) return;
     setImporting(true);
@@ -345,7 +433,7 @@ export default function ImportPage() {
             : `Imported ${data.imported} transactions (${data.skipped} skipped as duplicates or invalid).`
         );
         if (!data.error) setTxnRows([]);
-      } else {
+      } else if (mode === "trades") {
         const rows = tradeRows.filter((r) => r.include);
         const res = await fetch("/api/trades/bulk", {
           method: "POST",
@@ -362,6 +450,36 @@ export default function ImportPage() {
             : `Imported ${data.imported} trades (${data.skipped} skipped as duplicates or invalid). Holdings updated.`
         );
         if (!data.error) setTradeRows([]);
+      } else {
+        const rows = holdingRows.filter((r) => r.include);
+        const res = await fetch("/api/holdings/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            account_id: accountId,
+            holdings: rows.map((r) => ({
+              ticker: applySuffix(r.ticker),
+              name: r.name || null,
+              units: r.units,
+              cost_basis: r.price,
+            })),
+            cash: cashBalance,
+          }),
+        });
+        const data = await res.json();
+        setResult(
+          data.error
+            ? `Import failed: ${data.error}`
+            : `Imported ${data.imported} new holdings, updated ${data.updated}${
+                cashBalance !== null
+                  ? `, cash balance set to ${formatCurrency(cashBalance)}`
+                  : ""
+              }. Cost basis was seeded from the statement price — edit any holding to enter the real entry price.`
+        );
+        if (!data.error) {
+          setHoldingRows([]);
+          setCashBalance(null);
+        }
       }
     } finally {
       setImporting(false);
@@ -371,7 +489,9 @@ export default function ImportPage() {
   const previewCount =
     mode === "transactions"
       ? txnRows.filter((r) => r.include).length
-      : tradeRows.filter((r) => r.include).length;
+      : mode === "trades"
+        ? tradeRows.filter((r) => r.include).length
+        : holdingRows.filter((r) => r.include).length;
 
   return (
     <div className="space-y-8">
@@ -387,7 +507,7 @@ export default function ImportPage() {
           <div>
             <label className={labelClass}>What are you importing?</label>
             <div className="flex border border-gbx-border">
-              {(["transactions", "trades"] as Mode[]).map((m) => (
+              {(["transactions", "trades", "holdings"] as Mode[]).map((m) => (
                 <button
                   key={m}
                   type="button"
@@ -437,10 +557,26 @@ export default function ImportPage() {
           </div>
         </div>
 
+        {mode === "holdings" && (
+          <div className="sm:w-1/3">
+            <label className={labelClass}>Ticker market</label>
+            <select
+              className={inputClass}
+              value={suffix}
+              onChange={(e) => setSuffix(e.target.value)}
+            >
+              <option value=".AX">ASX — append .AX</option>
+              <option value="">US / already suffixed — leave as-is</option>
+            </select>
+          </div>
+        )}
+
         <p className="text-[11px] text-gbx-muted font-body">
           {mode === "transactions"
             ? "Works with CommBank exports (no header) and any CSV with Date, Amount (or Debit/Credit) and Description columns. Categories are guessed automatically — adjust them in the preview."
-            : "Works with exchange order-history exports (Rate inc. fee format) and any CSV with Date, Ticker, Side, Units and Price columns. Buys and sells update your holdings automatically."}
+            : mode === "trades"
+              ? "Works with exchange order-history exports (Rate inc. fee format) and any CSV with Date, Ticker, Side, Units and Price columns. Buys and sells update your holdings automatically."
+              : "Works with brokerage holdings valuations — a positions list of ticker, name, price, units and value (with or without headers). A CASH row is recorded as the account's cash balance. Existing holdings for the same ticker are updated."}
         </p>
 
         {parseError && (
@@ -590,6 +726,78 @@ export default function ImportPage() {
                     <td className="px-3 py-2 font-data text-xs text-gbx-charcoal">{r.units.toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
                     <td className="px-3 py-2 font-data text-xs text-gbx-charcoal">{formatCurrency(r.price)}</td>
                     <td className="px-3 py-2 font-data text-xs text-gbx-charcoal">{formatCurrency(r.units * r.price)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {mode === "holdings" && holdingRows.length > 0 && (
+        <div className="bg-white border border-gbx-border">
+          <div className="px-4 sm:px-6 pt-5 pb-3 flex items-baseline justify-between flex-wrap gap-2">
+            <div>
+              <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal">
+                Preview — {fileName}
+              </h2>
+              {cashBalance !== null && (
+                <p className="text-[11px] text-gbx-muted font-body mt-1">
+                  Cash balance {formatCurrency(cashBalance)} will be recorded on
+                  the account
+                </p>
+              )}
+            </div>
+            <button
+              onClick={handleImport}
+              disabled={importing || !accountId || previewCount === 0}
+              className="px-4 py-2 bg-gbx-teal text-white text-xs uppercase tracking-[0.15em] font-body font-medium hover:bg-gbx-deep-teal transition-colors disabled:opacity-50"
+            >
+              {importing
+                ? "Importing..."
+                : `Import ${previewCount} holding${previewCount !== 1 ? "s" : ""}`}
+            </button>
+          </div>
+          {!accountId && (
+            <p className="px-4 sm:px-6 pb-2 text-[11px] text-red-600 font-body">
+              Select an account above first.
+            </p>
+          )}
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="border-y border-gbx-border">
+                  <th className="px-3 py-2 w-8" />
+                  {["Ticker", "Name", "Units", "Price", "Value"].map((h) => (
+                    <th key={h} className="px-3 py-2 text-left text-[10px] uppercase tracking-[0.12em] font-body font-medium text-gbx-muted">
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {holdingRows.map((r, i) => (
+                  <tr key={i} className={`border-b border-gbx-border/50 ${r.include ? "" : "opacity-40"}`}>
+                    <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={r.include}
+                        onChange={(e) =>
+                          setHoldingRows((rows) =>
+                            rows.map((row, j) =>
+                              j === i ? { ...row, include: e.target.checked } : row
+                            )
+                          )
+                        }
+                      />
+                    </td>
+                    <td className="px-3 py-2 font-data text-xs font-medium text-gbx-charcoal whitespace-nowrap">
+                      {applySuffix(r.ticker)}
+                    </td>
+                    <td className="px-3 py-2 text-xs font-body text-gbx-charcoal max-w-[240px] truncate">{r.name}</td>
+                    <td className="px-3 py-2 font-data text-xs text-gbx-charcoal">{r.units.toLocaleString(undefined, { maximumFractionDigits: 8 })}</td>
+                    <td className="px-3 py-2 font-data text-xs text-gbx-charcoal">{r.price ? formatCurrency(r.price) : "—"}</td>
+                    <td className="px-3 py-2 font-data text-xs text-gbx-charcoal">{formatCurrency(r.value)}</td>
                   </tr>
                 ))}
               </tbody>
