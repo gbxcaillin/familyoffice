@@ -193,6 +193,16 @@ function initSchema(db: Database.Database) {
     }
   }
 
+  // The legacy per-holding `owner` override is no longer honoured: ownership now
+  // resolves from pct_p1 (explicit share) or the account's owner. Stale values
+  // in this column used to make the dashboard cards disagree with the drill-down
+  // breakdown, so clear it once. pct_p1 (the real proportional share) is kept.
+  try {
+    db.exec("UPDATE holdings SET owner = NULL WHERE owner IS NOT NULL");
+  } catch {
+    // Column may not exist on very old schemas; ignore.
+  }
+
   const catCount = db.prepare("SELECT COUNT(*) as count FROM categories").get() as { count: number };
   if (catCount.count === 0) {
     const insert = db.prepare("INSERT INTO categories (id, name, type, color) VALUES (?, ?, ?, ?)");

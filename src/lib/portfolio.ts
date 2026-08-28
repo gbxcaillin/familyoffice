@@ -107,35 +107,39 @@ export function computeNetWorth(db: Database.Database): NetWorthTotals {
     else jointTotal += bal;
   }
 
-  // Each holding's person1 share: explicit pct_p1, else the legacy single
-  // owner, else inherited from the account (person1 100%, person2 0%, joint 50%).
-  const holdingValues = db
+  // Each holding's person1 share: explicit pct_p1, else inherited from the
+  // account owner (person1 100%, person2 0%, joint 50%). The legacy per-holding
+  // `owner` column is intentionally ignored here so this matches the breakdown
+  // endpoint. We aggregate per holding in JS rather than GROUP BY the resolved
+  // percentage: the alias `pct_p1` collides with the real (mostly NULL) h.pct_p1
+  // column, so SQLite would group on the column instead of the CASE expression
+  // and mis-attribute every holding to one arbitrary owner.
+  const holdingRows = db
     .prepare(
       `SELECT a.type as account_type,
         COALESCE(
           h.pct_p1,
-          CASE COALESCE(h.owner, a.owner)
+          CASE a.owner
             WHEN 'person1' THEN 100
             WHEN 'person2' THEN 0
             ELSE 50
           END
-        ) as pct_p1,
-        SUM(h.units * pc.price) as market_value
+        ) as resolved_pct,
+        h.units * pc.price as market_value
        FROM holdings h
        JOIN accounts a ON h.account_id = a.id
        LEFT JOIN price_cache pc ON UPPER(h.ticker) = UPPER(pc.ticker)
-       WHERE pc.price IS NOT NULL
-       GROUP BY a.type, pct_p1`
+       WHERE pc.price IS NOT NULL`
     )
-    .all() as { account_type: string; pct_p1: number; market_value: number | null }[];
+    .all() as { account_type: string; resolved_pct: number; market_value: number | null }[];
 
   let holdingsTotal = 0;
-  for (const row of holdingValues) {
+  for (const row of holdingRows) {
     const val = row.market_value || 0;
     holdingsTotal += val;
     totalNetWorth += val;
     byType[row.account_type] = (byType[row.account_type] || 0) + val;
-    const p1 = Math.max(0, Math.min(100, row.pct_p1)) / 100;
+    const p1 = Math.max(0, Math.min(100, row.resolved_pct)) / 100;
     person1Total += val * p1;
     person2Total += val * (1 - p1);
   }

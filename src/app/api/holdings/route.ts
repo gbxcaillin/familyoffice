@@ -34,7 +34,7 @@ export async function GET() {
         a.owner as account_owner,
         COALESCE(
           h.pct_p1,
-          CASE COALESCE(h.owner, a.owner)
+          CASE a.owner
             WHEN 'person1' THEN 100
             WHEN 'person2' THEN 0
             ELSE 50
