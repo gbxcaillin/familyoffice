@@ -5,6 +5,7 @@ import {
   recordSnapshot,
   syncDividends,
 } from "@/lib/portfolio";
+import { refreshAllSuper } from "@/lib/super";
 
 // Daily job: refresh market prices, log any new dividends as income, and
 // record a portfolio valuation snapshot. Called by the server's cron via
@@ -19,6 +20,14 @@ export async function POST(request: NextRequest) {
 
   const prices = await refreshAllPrices(db);
 
+  // Value super accounts (unit price + accrued contributions) before snapshot.
+  let superResults;
+  try {
+    superResults = await refreshAllSuper(db);
+  } catch {
+    superResults = [];
+  }
+
   let dividends: { recorded: number; details: string[] };
   try {
     dividends = await syncDividends(db);
@@ -31,6 +40,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     date: new Date().toISOString().slice(0, 10),
     prices,
+    super: { accounts: superResults.length },
     dividends,
     snapshot: {
       totalNetWorth: totals.totalNetWorth,

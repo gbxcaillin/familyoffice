@@ -7,6 +7,7 @@ const TAB_DEFS: Record<string, { name: string; href: string }> = {
   dashboard: { name: "Dashboard", href: "/" },
   accounts: { name: "Accounts", href: "/accounts" },
   holdings: { name: "Holdings", href: "/holdings" },
+  super: { name: "Super", href: "/super" },
   spending: { name: "Spending", href: "/spending" },
   import: { name: "Import", href: "/import" },
   documents: { name: "Documents", href: "/documents" },
@@ -16,6 +17,7 @@ const DEFAULT_TAB_ORDER = [
   "dashboard",
   "accounts",
   "holdings",
+  "super",
   "spending",
   "import",
   "documents",
@@ -51,8 +53,12 @@ export default function DashboardShell({
     router.refresh();
   }
 
+  // Honour the saved order, then append any tabs added since it was saved so
+  // new pages (e.g. Super) still appear for users with an existing preference.
+  const ordered = tabOrder.filter((id) => TAB_DEFS[id]);
+  const missing = DEFAULT_TAB_ORDER.filter((id) => !ordered.includes(id));
   const tabs = [
-    ...tabOrder.filter((id) => TAB_DEFS[id]).map((id) => TAB_DEFS[id]),
+    ...[...ordered, ...missing].map((id) => TAB_DEFS[id]),
     { name: "Settings", href: "/settings" },
   ];
 

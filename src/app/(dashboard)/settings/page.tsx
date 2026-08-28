@@ -13,6 +13,7 @@ const LABELS: Record<string, Record<string, string>> = {
     dashboard: "Dashboard",
     accounts: "Accounts",
     holdings: "Holdings",
+    super: "Super",
     spending: "Spending",
     import: "Import",
     documents: "Documents",
@@ -86,7 +87,17 @@ export default function SettingsPage() {
   useEffect(() => {
     fetch("/api/prefs")
       .then((r) => r.json())
-      .then(setPrefs)
+      .then((data: LayoutPrefs) => {
+        // Append any items added since the prefs were saved (e.g. the Super
+        // tab) so newly-added pages/sections are reorderable, not hidden.
+        const merged = { ...data } as LayoutPrefs;
+        for (const key of Object.keys(LABELS) as (keyof LayoutPrefs)[]) {
+          const stored = Array.isArray(merged[key]) ? merged[key] : [];
+          const missing = Object.keys(LABELS[key]).filter((k) => !stored.includes(k));
+          merged[key] = [...stored.filter((k) => LABELS[key][k]), ...missing];
+        }
+        setPrefs(merged);
+      })
       .catch(() => {});
 
     setIsIOS(

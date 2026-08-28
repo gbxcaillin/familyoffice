@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import getDb from "@/lib/db";
-import { computeNetWorth, recordSnapshot } from "@/lib/portfolio";
+import { recordSnapshot } from "@/lib/portfolio";
+import { refreshAllSuper } from "@/lib/super";
 
 interface BalanceRow {
   date: string;
@@ -14,6 +15,10 @@ interface SpendRow {
 
 export async function GET() {
   const db = getDb();
+
+  // Bring super accounts up to date first (unit price + accrued contributions)
+  // so their fresh valuation feeds into today's net worth.
+  await refreshAllSuper(db);
 
   // Record today's true net worth so the trend accumulates a correct point
   // each day the dashboard is viewed (the daily cron does this too).

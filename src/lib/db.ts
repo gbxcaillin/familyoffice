@@ -203,6 +203,46 @@ function initSchema(db: Database.Database) {
     // Column may not exist on very old schemas; ignore.
   }
 
+  // Superannuation configuration. A super account grows two ways: its unit
+  // price moves (investment performance) and estimated contributions buy more
+  // units each pay cycle. Keeping this per-account config separate from the
+  // generic accounts row avoids widening that table for a single account type.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS super_config (
+      account_id TEXT PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
+      fund_name TEXT,
+      option_name TEXT,
+      price_source TEXT NOT NULL DEFAULT 'proxy',
+      unit_price REAL,
+      unit_price_date TEXT,
+      units REAL,
+      fee_annual REAL DEFAULT 0.001,
+      basket TEXT,
+      basket_base TEXT,
+      feed_url TEXT,
+      feed_path TEXT,
+      contrib_method TEXT DEFAULT 'sg',
+      salary REAL,
+      sg_rate REAL DEFAULT 0.12,
+      extra_per_period REAL DEFAULT 0,
+      pay_frequency TEXT DEFAULT 'fortnightly',
+      contrib_tax REAL DEFAULT 0.15,
+      last_contrib_date TEXT,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS super_price_history (
+      id TEXT PRIMARY KEY,
+      account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+      date TEXT NOT NULL,
+      unit_price REAL NOT NULL,
+      units REAL NOT NULL,
+      value REAL NOT NULL,
+      created_at TEXT DEFAULT (datetime('now')),
+      UNIQUE(account_id, date)
+    );
+  `);
+
   const catCount = db.prepare("SELECT COUNT(*) as count FROM categories").get() as { count: number };
   if (catCount.count === 0) {
     const insert = db.prepare("INSERT INTO categories (id, name, type, color) VALUES (?, ?, ?, ?)");
