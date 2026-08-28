@@ -6,8 +6,12 @@ interface LayoutPrefs {
   tabOrder: string[];
   dashboardOrder: string[];
   holdingsOrder: string[];
+  spendingOrder: string[];
+  accountsOrder: string[];
+  superOrder: string[];
 }
 
+// Static catalogues: the fixed sections whose labels are known at build time.
 const LABELS: Record<string, Record<string, string>> = {
   tabOrder: {
     dashboard: "Dashboard",
@@ -30,9 +34,27 @@ const LABELS: Record<string, Record<string, string>> = {
     performance: "Performance",
     trades: "Trade history",
   },
+  spendingOrder: {
+    summary: "Income / expenses summary",
+    transactions: "Transactions table",
+  },
 };
 
-const GROUPS: { key: keyof LayoutPrefs; title: string; note: string }[] = [
+// Which keys hold a fixed catalogue (validated against LABELS) vs a dynamic
+// list of the user's own account ids (labels fetched at runtime).
+const STATIC_KEYS: (keyof LayoutPrefs)[] = [
+  "tabOrder",
+  "dashboardOrder",
+  "holdingsOrder",
+  "spendingOrder",
+];
+
+const GROUPS: {
+  key: keyof LayoutPrefs;
+  title: string;
+  note: string;
+  dynamic?: boolean;
+}[] = [
   {
     key: "tabOrder",
     title: "Page order",
@@ -48,6 +70,23 @@ const GROUPS: { key: keyof LayoutPrefs; title: string; note: string }[] = [
     title: "Holdings sections",
     note: "Top-to-bottom order on the Holdings tab",
   },
+  {
+    key: "spendingOrder",
+    title: "Spending sections",
+    note: "Top-to-bottom order on the Spending tab",
+  },
+  {
+    key: "accountsOrder",
+    title: "Account cards",
+    note: "Order of the cards on the Accounts tab",
+    dynamic: true,
+  },
+  {
+    key: "superOrder",
+    title: "Super cards",
+    note: "Order of the cards on the Super tab",
+    dynamic: true,
+  },
 ];
 
 interface BeforeInstallPromptEvent extends Event {
@@ -57,6 +96,11 @@ interface BeforeInstallPromptEvent extends Event {
 
 export default function SettingsPage() {
   const [prefs, setPrefs] = useState<LayoutPrefs | null>(null);
+  // Labels for the dynamic (account-id) groups, filled from the account lists.
+  const [dynamicLabels, setDynamicLabels] = useState<Record<string, Record<string, string>>>({
+    accountsOrder: {},
+    superOrder: {},
+  });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -85,17 +129,39 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
-    fetch("/api/prefs")
-      .then((r) => r.json())
-      .then((data: LayoutPrefs) => {
-        // Append any items added since the prefs were saved (e.g. the Super
-        // tab) so newly-added pages/sections are reorderable, not hidden.
+    // Load prefs together with the account/super lists so the dynamic card
+    // groups can be labelled and normalised (drop deleted accounts, append new).
+    Promise.all([
+      fetch("/api/prefs").then((r) => r.json()),
+      fetch("/api/accounts").then((r) => r.json()).catch(() => []),
+      fetch("/api/super").then((r) => r.json()).catch(() => ({ accounts: [] })),
+    ])
+      .then(([data, accts, sup]: [LayoutPrefs, Array<{ id: string; name: string }>, { accounts: Array<{ account_id: string; name: string }> }]) => {
         const merged = { ...data } as LayoutPrefs;
-        for (const key of Object.keys(LABELS) as (keyof LayoutPrefs)[]) {
+
+        // Static groups: keep known ids in saved order, append any new ones.
+        for (const key of STATIC_KEYS) {
+          const cat = LABELS[key] || {};
           const stored = Array.isArray(merged[key]) ? merged[key] : [];
-          const missing = Object.keys(LABELS[key]).filter((k) => !stored.includes(k));
-          merged[key] = [...stored.filter((k) => LABELS[key][k]), ...missing];
+          const missing = Object.keys(cat).filter((k) => !stored.includes(k));
+          merged[key] = [...stored.filter((k) => cat[k]), ...missing];
         }
+
+        // Dynamic groups: normalise the saved id order against live accounts.
+        const acctIds = Array.isArray(accts) ? accts.map((a) => a.id) : [];
+        const superIds = Array.isArray(sup?.accounts) ? sup.accounts.map((a) => a.account_id) : [];
+        const normalise = (stored: string[] | undefined, ids: string[]) => {
+          const s = Array.isArray(stored) ? stored.filter((id) => ids.includes(id)) : [];
+          const seen = new Set(s);
+          return [...s, ...ids.filter((id) => !seen.has(id))];
+        };
+        merged.accountsOrder = normalise(merged.accountsOrder, acctIds);
+        merged.superOrder = normalise(merged.superOrder, superIds);
+
+        setDynamicLabels({
+          accountsOrder: Object.fromEntries((accts || []).map((a) => [a.id, a.name])),
+          superOrder: Object.fromEntries((sup?.accounts || []).map((a) => [a.account_id, a.name])),
+        });
         setPrefs(merged);
       })
       .catch(() => {});
@@ -161,10 +227,15 @@ export default function SettingsPage() {
   }
 
   async function reset() {
+    // Reset the static section orders to defaults; keep the account/super card
+    // orders as the live account order (natural order).
     await save({
       tabOrder: Object.keys(LABELS.tabOrder),
       dashboardOrder: Object.keys(LABELS.dashboardOrder),
       holdingsOrder: Object.keys(LABELS.holdingsOrder),
+      spendingOrder: Object.keys(LABELS.spendingOrder),
+      accountsOrder: Object.keys(dynamicLabels.accountsOrder),
+      superOrder: Object.keys(dynamicLabels.superOrder),
     });
   }
 
@@ -280,7 +351,9 @@ export default function SettingsPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-        {GROUPS.map((group) => (
+        {GROUPS.filter(
+          (g) => !g.dynamic || (prefs[g.key] && prefs[g.key].length > 0)
+        ).map((group) => (
           <div key={group.key} className="bg-white border border-gbx-border p-4 sm:p-6">
             <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal">
               {group.title}
@@ -298,7 +371,7 @@ export default function SettingsPage() {
                     <span className="font-data text-[11px] text-gbx-muted mr-2">
                       {i + 1}
                     </span>
-                    {LABELS[group.key][id] || id}
+                    {LABELS[group.key]?.[id] || dynamicLabels[group.key]?.[id] || id}
                   </span>
                   <span className="flex gap-1">
                     <button

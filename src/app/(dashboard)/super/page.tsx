@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { applyOrder } from "@/lib/prefs";
 
 interface BasketLeg {
   ticker: string;
@@ -154,6 +155,8 @@ const EMPTY_FORM: FormState = {
 export default function SuperPage() {
   const [accounts, setAccounts] = useState<SuperAccount[]>([]);
   const [users, setUsers] = useState<Users>(DEFAULT_USERS);
+  const [order, setOrder] = useState<string[]>([]);
+  const [expandedMix, setExpandedMix] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -173,7 +176,24 @@ export default function SuperPage() {
       .then((r) => r.json())
       .then(setUsers)
       .catch(() => {});
+    fetch("/api/prefs")
+      .then((r) => r.json())
+      .then((p) => {
+        if (Array.isArray(p?.superOrder)) setOrder(p.superOrder);
+      })
+      .catch(() => {});
   }, [load]);
+
+  const orderedAccounts = applyOrder(accounts, order, (a) => a.account_id);
+
+  function toggleMix(id: string) {
+    setExpandedMix((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const ownerLabel = (o: string) =>
     o === "joint" ? "Joint" : o === "person1" ? users.person1 : users.person2;
@@ -420,7 +440,7 @@ export default function SuperPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {accounts.map((a) => {
+          {orderedAccounts.map((a) => {
             const growth =
               a.history.length >= 2
                 ? a.history[a.history.length - 1].value - a.history[0].value
@@ -500,6 +520,35 @@ export default function SuperPage() {
                     {FREQ_LABEL[a.pay_frequency]} SG at {((a.sg_rate ?? 0.12) * 100).toFixed(1)}% of {fmtCurrency(a.salary)}, net of {((a.contrib_tax ?? 0.15) * 100).toFixed(0)}% contributions tax{a.extra_per_period ? `, plus ${fmtCurrency2(a.extra_per_period)} extra per pay` : ""}.
                   </p>
                 ) : null}
+
+                {/* Investment mix — the basket the option is tracked against */}
+                {a.basket.length > 0 && (() => {
+                  const total = a.basket.reduce((s, l) => s + l.weight, 0) || 1;
+                  const sorted = [...a.basket].sort((x, y) => y.weight - x.weight);
+                  const expanded = expandedMix.has(a.account_id);
+                  const shown = expanded ? sorted : sorted.slice(0, 5);
+                  return (
+                    <div className="border-t border-gbx-border pt-3 space-y-1.5">
+                      <p className="text-[10px] uppercase tracking-[0.15em] text-gbx-muted font-body">
+                        Investment mix ({a.basket.length})
+                      </p>
+                      {shown.map((l) => (
+                        <div key={l.ticker} className="flex items-center justify-between text-xs font-body">
+                          <span className="text-gbx-charcoal mr-2">{l.ticker.replace(/\.AX$/, "")}</span>
+                          <span className="text-gbx-muted font-data tabular-nums shrink-0">{((l.weight / total) * 100).toFixed(1)}%</span>
+                        </div>
+                      ))}
+                      {sorted.length > 5 && (
+                        <button
+                          onClick={() => toggleMix(a.account_id)}
+                          className="text-[11px] text-gbx-teal uppercase tracking-[0.1em] font-body font-medium hover:text-gbx-deep-teal transition-colors pt-0.5"
+                        >
+                          {expanded ? "Show less" : `Show all ${sorted.length}`}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}

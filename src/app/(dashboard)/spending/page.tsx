@@ -40,6 +40,7 @@ export default function SpendingPage() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [sectionOrder, setSectionOrder] = useState<string[]>(["summary", "transactions"]);
 
   const [form, setForm] = useState({
     account_id: "", date: new Date().toISOString().split("T")[0],
@@ -63,6 +64,22 @@ export default function SpendingPage() {
   }, [form.account_id]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    fetch("/api/prefs")
+      .then((r) => r.json())
+      .then((p) => {
+        if (Array.isArray(p?.spendingOrder) && p.spendingOrder.length > 0) {
+          setSectionOrder(p.spendingOrder);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const orderOf = (id: string) => {
+    const i = sectionOrder.indexOf(id);
+    return i === -1 ? 99 : 10 + i;
+  };
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -105,7 +122,7 @@ export default function SpendingPage() {
     .reduce((sum, t) => sum + Math.abs(t.amount), 0);
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-heading text-3xl font-light text-gbx-charcoal">
@@ -124,7 +141,7 @@ export default function SpendingPage() {
       </div>
 
       {/* Summary strip */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" style={{ order: orderOf("summary") }}>
         <div className="bg-white border border-gbx-border p-4">
           <p className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">Income</p>
           <p className="font-data text-xl text-gbx-teal">+{formatCurrency(totalIncome)}</p>
@@ -143,7 +160,7 @@ export default function SpendingPage() {
 
       {/* New transaction form */}
       {showForm && (
-        <form onSubmit={handleCreate} className="bg-white border border-gbx-border p-6 space-y-4">
+        <form onSubmit={handleCreate} className="bg-white border border-gbx-border p-6 space-y-4" style={{ order: 1 }}>
           <div className="flex gap-4 mb-2">
             <button type="button" onClick={() => setForm({ ...form, isExpense: true })}
               className={`px-4 py-2 text-[11px] uppercase tracking-[0.1em] font-body font-medium transition-colors ${form.isExpense ? "bg-gbx-charcoal text-white" : "bg-gbx-soft text-gbx-muted"}`}>
@@ -194,6 +211,7 @@ export default function SpendingPage() {
       )}
 
       {/* Transaction list */}
+      <div style={{ order: orderOf("transactions") }}>
       {transactions.length === 0 ? (
         <div className="bg-gbx-soft border border-gbx-border p-12 text-center">
           <p className="text-gbx-muted font-body">No transactions yet.</p>
@@ -230,6 +248,7 @@ export default function SpendingPage() {
           </table>
         </div>
       )}
+      </div>
     </div>
   );
 }

@@ -1,6 +1,13 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { applyOrder } from "@/lib/prefs";
+
+interface AccountHolding {
+  ticker: string;
+  name: string;
+  value: number;
+}
 
 interface Account {
   id: string;
@@ -53,6 +60,9 @@ const labelClass = "block text-[10px] uppercase tracking-[0.15em] font-body font
 export default function AccountsPage() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [users, setUsers] = useState<Users>(DEFAULT_USERS);
+  const [order, setOrder] = useState<string[]>([]);
+  const [holdingsByAccount, setHoldingsByAccount] = useState<Record<string, AccountHolding[]>>({});
+  const [expandedHoldings, setExpandedHoldings] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [showBalanceForm, setShowBalanceForm] = useState<string | null>(null);
@@ -75,12 +85,46 @@ export default function AccountsPage() {
       .then((r) => r.json())
       .then(setAccounts)
       .finally(() => setLoading(false));
+    // Group holdings under their account so each card can show its positions.
+    fetch("/api/holdings")
+      .then((r) => r.json())
+      .then((rows: Array<{ account_id: string; ticker: string; display_name: string; market_value: number | null }>) => {
+        const map: Record<string, AccountHolding[]> = {};
+        for (const h of rows || []) {
+          if (!h.market_value) continue;
+          (map[h.account_id] ||= []).push({
+            ticker: h.ticker,
+            name: h.display_name || h.ticker,
+            value: h.market_value,
+          });
+        }
+        for (const id of Object.keys(map)) map[id].sort((a, b) => b.value - a.value);
+        setHoldingsByAccount(map);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
     loadAccounts();
     fetch("/api/users").then((r) => r.json()).then(setUsers).catch(() => {});
+    fetch("/api/prefs")
+      .then((r) => r.json())
+      .then((p) => {
+        if (Array.isArray(p?.accountsOrder)) setOrder(p.accountsOrder);
+      })
+      .catch(() => {});
   }, [loadAccounts]);
+
+  const orderedAccounts = applyOrder(accounts, order, (a) => a.id);
+
+  function toggleHoldings(id: string) {
+    setExpandedHoldings((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const ownerLabel = (owner: string) =>
     owner === "joint" ? "Joint" : owner === "person1" ? users.person1 : users.person2;
@@ -227,7 +271,7 @@ export default function AccountsPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {accounts.map((acc) => (
+          {orderedAccounts.map((acc) => (
             <div key={acc.id} className="bg-white border border-gbx-border p-5 space-y-3">
               <div className="flex items-start justify-between">
                 <div>
@@ -345,6 +389,34 @@ export default function AccountsPage() {
                   </p>
                 )}
               </div>
+
+              {/* Top holdings for accounts that hold positions */}
+              {(holdingsByAccount[acc.id]?.length ?? 0) > 0 && (() => {
+                const list = holdingsByAccount[acc.id];
+                const expanded = expandedHoldings.has(acc.id);
+                const shown = expanded ? list : list.slice(0, 5);
+                return (
+                  <div className="border-t border-gbx-border pt-3 space-y-1.5">
+                    <p className="text-[10px] uppercase tracking-[0.15em] text-gbx-muted font-body">
+                      Holdings ({list.length})
+                    </p>
+                    {shown.map((h) => (
+                      <div key={h.ticker} className="flex items-center justify-between text-xs font-body">
+                        <span className="text-gbx-charcoal truncate mr-2" title={h.name}>{h.ticker}</span>
+                        <span className="text-gbx-muted font-data tabular-nums shrink-0">{formatCurrency(h.value)}</span>
+                      </div>
+                    ))}
+                    {list.length > 5 && (
+                      <button
+                        onClick={() => toggleHoldings(acc.id)}
+                        className="text-[11px] text-gbx-teal uppercase tracking-[0.1em] font-body font-medium hover:text-gbx-deep-teal transition-colors pt-0.5"
+                      >
+                        {expanded ? "Show less" : `Show all ${list.length}`}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
 
               <button
                 onClick={() => {
