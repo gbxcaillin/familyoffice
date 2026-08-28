@@ -3,6 +3,7 @@ import getDb from "@/lib/db";
 import { randomUUID } from "crypto";
 import { getQuote } from "@/lib/market";
 import { upsertQuote } from "@/lib/portfolio";
+import { accountHasTrades, reconcileHoldingUnits } from "@/lib/trades";
 
 interface IncomingHolding {
   ticker: string;
@@ -43,12 +44,23 @@ export async function POST(request: NextRequest) {
 
   let imported = 0;
   let updated = 0;
+  let reconciled = 0;
   const touched = new Set<string>();
+  // Tickers that already have a trade history: keep their trade-derived cost
+  // basis and just reconcile units to the valuation, rather than overwriting.
+  const reconcileTargets = new Map<string, number>();
 
   const batch = db.transaction(() => {
     for (const h of holdings) {
       const ticker = (h.ticker || "").toUpperCase().trim();
       if (!ticker || !h.units || h.units <= 0) continue;
+
+      if (accountHasTrades(db, account_id, ticker)) {
+        // Trades own the cost basis; remember the valuation units to top up to.
+        reconcileTargets.set(ticker, h.units);
+        continue;
+      }
+
       const cost = h.cost_basis && h.cost_basis > 0 ? h.cost_basis : 0;
       const row = existing.get(account_id, ticker) as { id: string } | undefined;
       if (row) {
@@ -69,6 +81,19 @@ export async function POST(request: NextRequest) {
     }
   });
   batch();
+
+  // For tickers with existing trades, reconcile units up to the valuation
+  // (adds DRP top-up units) without touching the trade cost basis.
+  for (const [ticker, target] of reconcileTargets) {
+    const before = db
+      .prepare("SELECT units FROM holdings WHERE account_id = ? AND UPPER(ticker) = UPPER(?)")
+      .get(account_id, ticker) as { units: number } | undefined;
+    reconcileHoldingUnits(db, account_id, ticker, target);
+    const after = db
+      .prepare("SELECT units FROM holdings WHERE account_id = ? AND UPPER(ticker) = UPPER(?)")
+      .get(account_id, ticker) as { units: number } | undefined;
+    if (after && (!before || after.units > before.units + 1e-6)) reconciled += 1;
+  }
 
   // Record the account's cash balance if one was supplied.
   if (cash !== undefined && cash !== null && !isNaN(cash)) {
@@ -104,5 +129,5 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ imported, updated });
+  return NextResponse.json({ imported, updated, reconciled });
 }

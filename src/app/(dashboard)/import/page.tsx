@@ -188,11 +188,21 @@ export default function ImportPage() {
         setMessage(`Imported ${data.imported} transactions (${data.skipped} skipped).`);
         resetPreview();
       } else if (result.kind === "trades") {
-        setMessage(`Imported ${data.imported} trades (${data.skipped} skipped). Holdings updated.`);
+        setMessage(
+          `Imported ${data.imported} trades (${data.skipped} skipped). Holdings updated.${
+            data.reconciled
+              ? ` Reconciled ${data.reconciled} position${data.reconciled !== 1 ? "s" : ""} to the statement (DRP top-up).`
+              : ""
+          }`
+        );
         resetPreview();
       } else {
         setMessage(
-          `Imported ${data.imported} new holdings, updated ${data.updated}. Cost basis seeded from the statement — edit a holding to set the real entry price.`
+          `Imported ${data.imported} new holdings, updated ${data.updated}.${
+            data.reconciled
+              ? ` Reconciled ${data.reconciled} traded position${data.reconciled !== 1 ? "s" : ""} to the statement units, keeping the trade cost basis.`
+              : " Cost basis seeded from the statement — edit a holding to set the real entry price."
+          }`
         );
         resetPreview();
       }

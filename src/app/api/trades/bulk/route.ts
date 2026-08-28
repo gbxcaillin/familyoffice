@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import getDb from "@/lib/db";
 import { randomUUID } from "crypto";
-import { syncHoldingFromTrades } from "@/lib/trades";
+import {
+  syncHoldingFromTrades,
+  accountHasTrades,
+  reconcileHoldingUnits,
+} from "@/lib/trades";
 import { getQuote } from "@/lib/market";
 import { upsertQuote } from "@/lib/portfolio";
 
@@ -41,6 +45,23 @@ export async function POST(request: NextRequest) {
     `INSERT INTO trades (id, account_id, ticker, side, units, price, fees, trade_date)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
+
+  // Capture valuation-sourced unit targets before importing: a holding that
+  // exists with no trades yet holds the true current units (incl. DRP). After
+  // importing trades we reconcile any shortfall back up to these.
+  const distinctTickers = new Set(
+    trades.map((t) => (t.ticker || "").toUpperCase().trim()).filter(Boolean)
+  );
+  const valuationTargets = new Map<string, number>();
+  for (const ticker of distinctTickers) {
+    if (accountHasTrades(db, account_id, ticker)) continue;
+    const h = db
+      .prepare(
+        "SELECT units FROM holdings WHERE account_id = ? AND UPPER(ticker) = UPPER(?)"
+      )
+      .get(account_id, ticker) as { units: number } | undefined;
+    if (h) valuationTargets.set(ticker, h.units);
+  }
 
   let imported = 0;
   let skipped = 0;
@@ -84,6 +105,23 @@ export async function POST(request: NextRequest) {
     syncHoldingFromTrades(db, account_id, ticker);
   }
 
+  // Top up any DRP shortfall against the pre-import valuation units.
+  let reconciled = 0;
+  for (const [ticker, target] of valuationTargets) {
+    const before = db
+      .prepare(
+        "SELECT units FROM holdings WHERE account_id = ? AND UPPER(ticker) = UPPER(?)"
+      )
+      .get(account_id, ticker) as { units: number } | undefined;
+    reconcileHoldingUnits(db, account_id, ticker, target);
+    const after = db
+      .prepare(
+        "SELECT units FROM holdings WHERE account_id = ? AND UPPER(ticker) = UPPER(?)"
+      )
+      .get(account_id, ticker) as { units: number } | undefined;
+    if (before && after && after.units > before.units + 1e-6) reconciled += 1;
+  }
+
   // Best-effort: price any tickers new to the cache so positions value now.
   for (const ticker of touched) {
     const cached = db
@@ -99,5 +137,5 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ imported, skipped });
+  return NextResponse.json({ imported, skipped, reconciled });
 }

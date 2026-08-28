@@ -1,6 +1,57 @@
 import type Database from "better-sqlite3";
 import { randomUUID } from "crypto";
 
+export function accountHasTrades(
+  db: Database.Database,
+  accountId: string,
+  ticker: string
+): boolean {
+  return !!db
+    .prepare(
+      "SELECT 1 FROM trades WHERE account_id = ? AND UPPER(ticker) = UPPER(?) LIMIT 1"
+    )
+    .get(accountId, ticker);
+}
+
+// Reconcile a trade-derived position up to a known target unit count (from a
+// holdings valuation). The shortfall is almost always dividend-reinvestment
+// (DRP) units the cash report never itemises, so top them up with one
+// synthetic buy at the current average cost — units then match the statement
+// while the real cost basis and performance from the trades are preserved.
+export function reconcileHoldingUnits(
+  db: Database.Database,
+  accountId: string,
+  ticker: string,
+  targetUnits: number
+) {
+  if (!accountHasTrades(db, accountId, ticker)) return; // nothing to reconcile
+  syncHoldingFromTrades(db, accountId, ticker);
+  const holding = db
+    .prepare(
+      "SELECT units, cost_basis FROM holdings WHERE account_id = ? AND UPPER(ticker) = UPPER(?)"
+    )
+    .get(accountId, ticker) as { units: number; cost_basis: number } | undefined;
+  const current = holding ? holding.units : 0;
+  const gap = targetUnits - current;
+  if (gap <= 1e-6) return; // trades already meet or exceed the target
+
+  const avg = holding ? holding.cost_basis : 0;
+  const today = new Date().toISOString().slice(0, 10);
+  db.prepare(
+    `INSERT INTO trades (id, account_id, ticker, side, units, price, fees, trade_date, notes)
+     VALUES (?, ?, ?, 'buy', ?, ?, 0, ?, ?)`
+  ).run(
+    `trd_${randomUUID().slice(0, 8)}`,
+    accountId,
+    ticker.toUpperCase().trim(),
+    gap,
+    avg,
+    today,
+    "DRP / reconciled to statement holdings"
+  );
+  syncHoldingFromTrades(db, accountId, ticker);
+}
+
 // Recompute the holdings row for an account+ticker from its trade history
 // using the average-cost method. A fully exited position removes the holding.
 export function syncHoldingFromTrades(
