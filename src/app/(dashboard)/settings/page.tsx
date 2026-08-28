@@ -129,40 +129,46 @@ export default function SettingsPage() {
   }
 
   useEffect(() => {
-    // Load prefs together with the account/super lists so the dynamic card
-    // groups can be labelled and normalised (drop deleted accounts, append new).
-    Promise.all([
-      fetch("/api/prefs").then((r) => r.json()),
-      fetch("/api/accounts").then((r) => r.json()).catch(() => []),
-      fetch("/api/super").then((r) => r.json()).catch(() => ({ accounts: [] })),
-    ])
-      .then(([data, accts, sup]: [LayoutPrefs, Array<{ id: string; name: string }>, { accounts: Array<{ account_id: string; name: string }> }]) => {
-        const merged = { ...data } as LayoutPrefs;
+    const normalise = (stored: string[] | undefined, ids: string[]) => {
+      const s = Array.isArray(stored) ? stored.filter((id) => ids.includes(id)) : [];
+      const seen = new Set(s);
+      return [...s, ...ids.filter((id) => !seen.has(id))];
+    };
 
-        // Static groups: keep known ids in saved order, append any new ones.
+    // Load prefs FIRST and render the reorder UI immediately — the static
+    // groups (incl. Page order with Super) must not wait on the slower account
+    // lists (which trigger a live super/Yahoo refresh).
+    fetch("/api/prefs")
+      .then((r) => r.json())
+      .then((data: LayoutPrefs) => {
+        const merged = { ...data } as LayoutPrefs;
         for (const key of STATIC_KEYS) {
           const cat = LABELS[key] || {};
           const stored = Array.isArray(merged[key]) ? merged[key] : [];
           const missing = Object.keys(cat).filter((k) => !stored.includes(k));
           merged[key] = [...stored.filter((k) => cat[k]), ...missing];
         }
-
-        // Dynamic groups: normalise the saved id order against live accounts.
-        const acctIds = Array.isArray(accts) ? accts.map((a) => a.id) : [];
-        const superIds = Array.isArray(sup?.accounts) ? sup.accounts.map((a) => a.account_id) : [];
-        const normalise = (stored: string[] | undefined, ids: string[]) => {
-          const s = Array.isArray(stored) ? stored.filter((id) => ids.includes(id)) : [];
-          const seen = new Set(s);
-          return [...s, ...ids.filter((id) => !seen.has(id))];
-        };
-        merged.accountsOrder = normalise(merged.accountsOrder, acctIds);
-        merged.superOrder = normalise(merged.superOrder, superIds);
-
-        setDynamicLabels({
-          accountsOrder: Object.fromEntries((accts || []).map((a) => [a.id, a.name])),
-          superOrder: Object.fromEntries((sup?.accounts || []).map((a) => [a.account_id, a.name])),
-        });
         setPrefs(merged);
+      })
+      .catch(() => {});
+
+    // Load account/super lists separately (best-effort) to label and normalise
+    // the dynamic card groups once they arrive.
+    fetch("/api/accounts")
+      .then((r) => r.json())
+      .then((accts: Array<{ id: string; name: string }>) => {
+        const ids = Array.isArray(accts) ? accts.map((a) => a.id) : [];
+        setDynamicLabels((d) => ({ ...d, accountsOrder: Object.fromEntries((accts || []).map((a) => [a.id, a.name])) }));
+        setPrefs((p) => (p ? { ...p, accountsOrder: normalise(p.accountsOrder, ids) } : p));
+      })
+      .catch(() => {});
+    fetch("/api/super")
+      .then((r) => r.json())
+      .then((sup: { accounts?: Array<{ account_id: string; name: string }> }) => {
+        const list = sup?.accounts || [];
+        const ids = list.map((a) => a.account_id);
+        setDynamicLabels((d) => ({ ...d, superOrder: Object.fromEntries(list.map((a) => [a.account_id, a.name])) }));
+        setPrefs((p) => (p ? { ...p, superOrder: normalise(p.superOrder, ids) } : p));
       })
       .catch(() => {});
 
@@ -401,6 +407,9 @@ export default function SettingsPage() {
       <p className="text-[11px] text-gbx-muted font-body">
         Changes apply after saving — other pages pick up the new layout next
         time they load.
+      </p>
+      <p className="text-[10px] text-gbx-muted/70 font-data uppercase tracking-[0.15em]">
+        Layout engine v3 · super orderable
       </p>
     </div>
   );
