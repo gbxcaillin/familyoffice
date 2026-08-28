@@ -64,6 +64,25 @@ export default function SettingsPage() {
   const [installed, setInstalled] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
 
+  const [backfilling, setBackfilling] = useState(false);
+  const [backfillMsg, setBackfillMsg] = useState<string | null>(null);
+
+  async function handleBackfill() {
+    setBackfilling(true);
+    setBackfillMsg(null);
+    try {
+      const res = await fetch("/api/networth/backfill", { method: "POST" });
+      const data = await res.json();
+      setBackfillMsg(
+        data.error
+          ? `Failed: ${data.error}`
+          : `Rebuilt ${data.written} weeks of net worth history from market prices. Open the Dashboard to see the trend.`
+      );
+    } finally {
+      setBackfilling(false);
+    }
+  }
+
   useEffect(() => {
     fetch("/api/prefs")
       .then((r) => r.json())
@@ -217,6 +236,35 @@ export default function SettingsPage() {
               Installed ✓
             </span>
           )}
+        </div>
+      </div>
+
+      {/* Net worth history */}
+      <div className="bg-white border border-gbx-border p-4 sm:p-6">
+        <div className="flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal">
+              Net Worth History
+            </h2>
+            <p className="text-sm text-gbx-muted font-body mt-1 max-w-xl">
+              Reconstruct the past year of your net worth trend from historical
+              market prices, so the chart isn&apos;t empty while daily snapshots
+              build up. Early points assume today&apos;s positions and account
+              balances — an estimate that reflects how the markets moved.
+            </p>
+            {backfillMsg && (
+              <p className="text-sm text-gbx-teal font-body font-medium mt-2">
+                {backfillMsg}
+              </p>
+            )}
+          </div>
+          <button
+            onClick={handleBackfill}
+            disabled={backfilling}
+            className="px-5 py-2.5 bg-gbx-teal text-white text-xs uppercase tracking-[0.15em] font-body font-medium hover:bg-gbx-deep-teal transition-colors disabled:opacity-50"
+          >
+            {backfilling ? "Rebuilding..." : "Rebuild History"}
+          </button>
         </div>
       </div>
 

@@ -182,12 +182,15 @@ function initSchema(db: Database.Database) {
     }
   }
 
-  // Optional per-holding owner override; when null the holding inherits its
-  // account's owner.
-  try {
-    db.exec("ALTER TABLE holdings ADD COLUMN owner TEXT");
-  } catch {
-    // Column already exists.
+  // Per-holding ownership. `owner` is a legacy single-owner override; `pct_p1`
+  // is the proportional share owned by person1 (0-100), the remainder person2.
+  // When both are null the holding inherits its account's owner.
+  for (const col of ["owner TEXT", "pct_p1 REAL"]) {
+    try {
+      db.exec(`ALTER TABLE holdings ADD COLUMN ${col}`);
+    } catch {
+      // Column already exists.
+    }
   }
 
   const catCount = db.prepare("SELECT COUNT(*) as count FROM categories").get() as { count: number };

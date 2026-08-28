@@ -8,8 +8,8 @@ interface Holding {
   account_id: string;
   account_name: string;
   account_owner: string;
-  owner: string | null;
-  effective_owner: string;
+  pct_p1: number | null;
+  effective_pct_p1: number;
   ticker: string;
   name: string | null;
   units: number;
@@ -117,12 +117,10 @@ export default function HoldingsPage() {
     cost_basis: "",
     currency: "AUD",
     notes: "",
-    owner: "inherit",
+    pct_p1: "",
   });
 
   const [users, setUsers] = useState({ person1: "Person 1", person2: "Person 2" });
-  const ownerLabel = (o: string) =>
-    o === "joint" ? "Joint" : o === "person1" ? users.person1 : users.person2;
 
   // Trades
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -281,7 +279,7 @@ export default function HoldingsPage() {
         ...form,
         units: parseFloat(form.units),
         cost_basis: parseFloat(form.cost_basis || "0"),
-        owner: form.owner === "inherit" ? null : form.owner,
+        pct_p1: form.pct_p1 === "" ? null : parseFloat(form.pct_p1),
       }),
     });
 
@@ -293,17 +291,20 @@ export default function HoldingsPage() {
       cost_basis: "",
       currency: "AUD",
       notes: "",
-      owner: "inherit",
+      pct_p1: "",
     });
     setShowAdd(false);
     await loadHoldings();
   }
 
-  async function handleOwnerChange(id: string, owner: string) {
+  async function handlePctChange(id: string, pct_p1: number | null) {
+    setHoldings((hs) =>
+      hs.map((h) => (h.id === id ? { ...h, pct_p1 } : h))
+    );
     await fetch("/api/holdings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, owner }),
+      body: JSON.stringify({ id, pct_p1 }),
     });
     await loadHoldings();
   }
@@ -798,19 +799,27 @@ export default function HoldingsPage() {
               </div>
 
               <div>
-                <label className={labelClass}>Owner</label>
-                <select
-                  value={form.owner}
+                <label className={labelClass}>
+                  % owned by {users.person1.split(" ")[0]}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={form.pct_p1}
                   onChange={(e) =>
-                    setForm((f) => ({ ...f, owner: e.target.value }))
+                    setForm((f) => ({ ...f, pct_p1: e.target.value }))
                   }
-                  className="w-full px-3 py-2 border border-gbx-border bg-white text-sm font-body text-gbx-charcoal focus:border-gbx-teal focus:outline-none"
-                >
-                  <option value="inherit">Same as account</option>
-                  <option value="person1">{users.person1}</option>
-                  <option value="person2">{users.person2}</option>
-                  <option value="joint">Joint</option>
-                </select>
+                  placeholder="Blank = same as account"
+                  className={inputClass}
+                />
+                {form.pct_p1 !== "" && (
+                  <p className="text-[11px] text-gbx-muted font-body mt-1">
+                    {form.pct_p1}% {users.person1.split(" ")[0]} ·{" "}
+                    {100 - (parseFloat(form.pct_p1) || 0)}%{" "}
+                    {users.person2.split(" ")[0]}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -855,7 +864,7 @@ export default function HoldingsPage() {
                   ["Ticker", "", "ticker"],
                   ["Name", "hidden xl:table-cell", "display_name"],
                   ["Account", "hidden lg:table-cell", "account_name"],
-                  ["Owner", "hidden lg:table-cell", "effective_owner"],
+                  [`Owner split`, "hidden sm:table-cell", "effective_pct_p1"],
                   ["Units", "hidden sm:table-cell", "units"],
                   ["Price", "hidden md:table-cell", "cached_price"],
                   ["Day %", "hidden lg:table-cell", "cached_change_percent"],
@@ -899,22 +908,34 @@ export default function HoldingsPage() {
                   <td className="hidden lg:table-cell px-4 py-3 text-xs font-body text-gbx-muted">
                     {h.account_name}
                   </td>
-                  <td className="hidden lg:table-cell px-4 py-3">
-                    <select
-                      value={h.owner || "inherit"}
-                      onChange={(e) => handleOwnerChange(h.id, e.target.value)}
-                      className={`border border-gbx-border text-xs font-body px-2 py-1 bg-white ${
-                        h.owner ? "text-gbx-charcoal" : "text-gbx-muted"
-                      }`}
-                      title="Who this holding belongs to"
-                    >
-                      <option value="inherit">
-                        {ownerLabel(h.account_owner)} (from account)
-                      </option>
-                      <option value="person1">{users.person1}</option>
-                      <option value="person2">{users.person2}</option>
-                      <option value="joint">Joint</option>
-                    </select>
+                  <td className="hidden sm:table-cell px-4 py-3">
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={
+                          h.pct_p1 !== null
+                            ? h.pct_p1
+                            : Math.round(h.effective_pct_p1)
+                        }
+                        onChange={(e) =>
+                          handlePctChange(
+                            h.id,
+                            e.target.value === "" ? null : parseFloat(e.target.value)
+                          )
+                        }
+                        className={`w-14 border border-gbx-border text-xs font-data px-1.5 py-1 bg-white ${
+                          h.pct_p1 !== null ? "text-gbx-charcoal" : "text-gbx-muted"
+                        }`}
+                        title={`% owned by ${users.person1}; the rest is ${users.person2}'s`}
+                      />
+                      <span className="text-[10px] font-body text-gbx-muted leading-tight">
+                        {Math.round(h.effective_pct_p1)}% {users.person1.split(" ")[0]}
+                        <br />
+                        {100 - Math.round(h.effective_pct_p1)}% {users.person2.split(" ")[0]}
+                      </span>
+                    </div>
                   </td>
                   <td className="hidden sm:table-cell px-4 py-3 font-data text-sm text-gbx-charcoal">
                     {h.units.toLocaleString()}
@@ -984,7 +1005,7 @@ export default function HoldingsPage() {
                 </td>
                 <td className="hidden xl:table-cell" />
                 <td className="hidden lg:table-cell" />
-                <td className="hidden lg:table-cell" />
+                <td className="hidden sm:table-cell" />
                 <td className="hidden sm:table-cell" />
                 <td className="hidden md:table-cell" />
                 <td className="hidden lg:table-cell" />

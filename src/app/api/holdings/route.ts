@@ -8,7 +8,8 @@ interface HoldingRow {
   account_name: string;
   account_owner: string;
   owner: string | null;
-  effective_owner: string;
+  pct_p1: number | null;
+  effective_pct_p1: number;
   ticker: string;
   name: string | null;
   units: number;
@@ -31,7 +32,14 @@ export async function GET() {
       `SELECT h.*,
         a.name as account_name,
         a.owner as account_owner,
-        COALESCE(h.owner, a.owner) as effective_owner,
+        COALESCE(
+          h.pct_p1,
+          CASE COALESCE(h.owner, a.owner)
+            WHEN 'person1' THEN 100
+            WHEN 'person2' THEN 0
+            ELSE 50
+          END
+        ) as effective_pct_p1,
         pc.price as cached_price,
         pc.change_percent as cached_change_percent,
         pc.dividend_yield as cached_dividend_yield,
@@ -108,7 +116,7 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   const body = await request.json();
-  const { id, units, cost_basis, notes, owner } = body;
+  const { id, units, cost_basis, notes, owner, pct_p1 } = body;
 
   if (!id) {
     return NextResponse.json({ error: "ID required" }, { status: 400 });
@@ -135,6 +143,17 @@ export async function PUT(request: NextRequest) {
     // "" or "inherit" clears the override so the holding follows its account.
     sets.push("owner = ?");
     vals.push(owner && owner !== "inherit" ? owner : null);
+  }
+  if (pct_p1 !== undefined) {
+    // null clears the split so the holding follows its account owner.
+    sets.push("pct_p1 = ?");
+    if (pct_p1 === null || pct_p1 === "") {
+      vals.push(null);
+    } else {
+      vals.push(Math.max(0, Math.min(100, parseFloat(pct_p1))));
+    }
+    // A proportional split supersedes any legacy single-owner override.
+    sets.push("owner = NULL");
   }
   if (sets.length === 0) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });

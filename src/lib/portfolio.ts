@@ -107,17 +107,27 @@ export function computeNetWorth(db: Database.Database): NetWorthTotals {
     else jointTotal += bal;
   }
 
+  // Each holding's person1 share: explicit pct_p1, else the legacy single
+  // owner, else inherited from the account (person1 100%, person2 0%, joint 50%).
   const holdingValues = db
     .prepare(
-      `SELECT COALESCE(h.owner, a.owner) as account_owner, a.type as account_type,
+      `SELECT a.type as account_type,
+        COALESCE(
+          h.pct_p1,
+          CASE COALESCE(h.owner, a.owner)
+            WHEN 'person1' THEN 100
+            WHEN 'person2' THEN 0
+            ELSE 50
+          END
+        ) as pct_p1,
         SUM(h.units * pc.price) as market_value
        FROM holdings h
        JOIN accounts a ON h.account_id = a.id
        LEFT JOIN price_cache pc ON UPPER(h.ticker) = UPPER(pc.ticker)
        WHERE pc.price IS NOT NULL
-       GROUP BY COALESCE(h.owner, a.owner), a.type`
+       GROUP BY a.type, pct_p1`
     )
-    .all() as { account_owner: string; account_type: string; market_value: number | null }[];
+    .all() as { account_type: string; pct_p1: number; market_value: number | null }[];
 
   let holdingsTotal = 0;
   for (const row of holdingValues) {
@@ -125,9 +135,9 @@ export function computeNetWorth(db: Database.Database): NetWorthTotals {
     holdingsTotal += val;
     totalNetWorth += val;
     byType[row.account_type] = (byType[row.account_type] || 0) + val;
-    if (row.account_owner === "person1") person1Total += val;
-    else if (row.account_owner === "person2") person2Total += val;
-    else jointTotal += val;
+    const p1 = Math.max(0, Math.min(100, row.pct_p1)) / 100;
+    person1Total += val * p1;
+    person2Total += val * (1 - p1);
   }
 
   let totalAssets = 0;
@@ -177,6 +187,136 @@ export function recordSnapshot(db: Database.Database): NetWorthTotals {
     totals.jointTotal
   );
   return totals;
+}
+
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// Reconstruct a net worth history so the trend has something to show before
+// daily snapshots accumulate. Method mirrors the performance chart: current
+// holdings valued at historical prices, on top of a constant base of current
+// account balances. Early points therefore assume today's positions — an
+// estimate, but a useful market-driven trend.
+export async function backfillSnapshots(
+  db: Database.Database,
+  days = 365
+): Promise<{ written: number }> {
+  const { getYahoo } = await import("./market");
+
+  const accountsBase = (
+    db
+      .prepare(
+        `SELECT COALESCE(SUM(
+           (SELECT b.balance FROM balances b WHERE b.account_id = a.id ORDER BY b.date DESC LIMIT 1)
+         ), 0) as total FROM accounts a`
+      )
+      .get() as { total: number }
+  ).total;
+
+  const positions = db
+    .prepare(
+      `SELECT UPPER(ticker) as ticker, SUM(units) as units
+       FROM holdings GROUP BY UPPER(ticker) HAVING SUM(units) > 0`
+    )
+    .all() as { ticker: string; units: number }[];
+
+  const from = new Date(Date.now() - days * 86_400_000);
+  const to = new Date();
+  const yahooFinance = await getYahoo();
+
+  // Historical close per ticker (weekly), plus USD→AUD for USD-quoted ones.
+  const seriesByTicker: Record<string, Map<string, number>> = {};
+  const currencyByTicker: Record<string, string> = {};
+  const allDates = new Set<string>();
+
+  await Promise.all(
+    positions.map(async (p) => {
+      try {
+        const r: any = await yahooFinance.chart(p.ticker, {
+          period1: from,
+          period2: to,
+          interval: "1wk",
+        });
+        const m = new Map<string, number>();
+        for (const q of r?.quotes || []) {
+          if (q.close == null) continue;
+          const d = new Date(q.date).toISOString().slice(0, 10);
+          m.set(d, q.close);
+          allDates.add(d);
+        }
+        if (m.size > 0) {
+          seriesByTicker[p.ticker] = m;
+          currencyByTicker[p.ticker] = r?.meta?.currency || "AUD";
+        }
+      } catch {
+        // Skip tickers without history.
+      }
+    })
+  );
+
+  let fxMap: Map<string, number> | null = null;
+  if (Object.values(currencyByTicker).some((c) => c === "USD")) {
+    try {
+      const r: any = await yahooFinance.chart("AUD=X", {
+        period1: from,
+        period2: to,
+        interval: "1wk",
+      });
+      fxMap = new Map();
+      for (const q of r?.quotes || []) {
+        if (q.close == null) continue;
+        fxMap.set(new Date(q.date).toISOString().slice(0, 10), q.close);
+      }
+    } catch {
+      fxMap = null;
+    }
+  }
+
+  const sortedDates = [...allDates].sort();
+  if (sortedDates.length === 0) return { written: 0 };
+
+  const unitsByTicker = new Map(positions.map((p) => [p.ticker, p.units]));
+  const lastPrice: Record<string, number> = {};
+  const lastFx: Record<string, number> = {};
+  let lastFxRate = 1;
+
+  const upsert = db.prepare(
+    `INSERT INTO snapshots (id, date, total_net_worth, total_assets, total_liabilities, holdings_value, person1_total, person2_total, joint_total)
+     VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0)
+     ON CONFLICT(date) DO UPDATE SET
+       total_net_worth = excluded.total_net_worth,
+       total_assets = excluded.total_assets,
+       total_liabilities = excluded.total_liabilities,
+       holdings_value = excluded.holdings_value`
+  );
+
+  const today = new Date().toISOString().slice(0, 10);
+  let written = 0;
+
+  const write = db.transaction(() => {
+    for (const date of sortedDates) {
+      if (date >= today) continue; // today's exact value is recorded live
+      if (fxMap && fxMap.has(date)) lastFxRate = fxMap.get(date)!;
+      lastFx[date] = lastFxRate;
+
+      let holdingsValue = 0;
+      for (const t of Object.keys(seriesByTicker)) {
+        const px = seriesByTicker[t].get(date);
+        if (px !== undefined) lastPrice[t] = px;
+        if (lastPrice[t] === undefined) continue;
+        const fx = currencyByTicker[t] === "USD" ? lastFxRate : 1;
+        holdingsValue += lastPrice[t] * (unitsByTicker.get(t) || 0) * fx;
+      }
+
+      const nw = accountsBase + holdingsValue;
+      // Base already nets assets and liabilities; split for the snapshot row.
+      const assets = Math.max(accountsBase, 0) + holdingsValue;
+      const liabilities = accountsBase < 0 ? -accountsBase : 0;
+      upsert.run(`snp_${randomUUID().slice(0, 8)}`, date, nw, assets, liabilities, holdingsValue);
+      written += 1;
+    }
+  });
+  write();
+
+  return { written };
 }
 
 // Detect dividend events on held tickers and log them: one dividends row per
