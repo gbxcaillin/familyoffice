@@ -126,6 +126,69 @@ function formatPercent(value: number | null): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+type ColSort = { key: string; dir: 1 | -1 };
+
+// Generic column sort: nulls sink, strings collate, numbers compare.
+function sortRows<T>(rows: T[], sort: ColSort | null, stringKeys: string[]): T[] {
+  if (!sort) return rows;
+  const arr = [...rows];
+  const isStr = stringKeys.includes(sort.key);
+  arr.sort((a, b) => {
+    const av = (a as Record<string, unknown>)[sort.key];
+    const bv = (b as Record<string, unknown>)[sort.key];
+    if (av === null || av === undefined) return 1;
+    if (bv === null || bv === undefined) return -1;
+    return (isStr ? String(av).localeCompare(String(bv)) : Number(av) - Number(bv)) * sort.dir;
+  });
+  return arr;
+}
+
+// Toggle helper: same column flips direction; a new column starts ascending for
+// text and descending (largest-first) for numbers.
+function makeToggle(
+  set: React.Dispatch<React.SetStateAction<ColSort | null>>,
+  stringKeys: string[]
+) {
+  return (key: string) =>
+    set((s) =>
+      s && s.key === key
+        ? { key, dir: s.dir === 1 ? -1 : 1 }
+        : { key, dir: stringKeys.includes(key) ? 1 : -1 }
+    );
+}
+
+// A clickable table header cell that shows the active sort arrow. Pass the
+// column's base cell classes (alignment/padding/typography) via `className`.
+function SortTh({
+  label,
+  k,
+  className = "",
+  sort,
+  onSort,
+}: {
+  label: string;
+  k?: string;
+  className?: string;
+  sort: ColSort | null;
+  onSort: (k: string) => void;
+}) {
+  const active = !!k && sort?.key === k;
+  return (
+    <th
+      onClick={k ? () => onSort(k) : undefined}
+      className={`${className} ${
+        k
+          ? "cursor-pointer select-none hover:text-gbx-charcoal " +
+            (active ? "text-gbx-teal" : "text-gbx-muted")
+          : "text-gbx-muted"
+      }`}
+    >
+      {label}
+      {active && <span className="ml-1">{sort!.dir === 1 ? "▲" : "▼"}</span>}
+    </th>
+  );
+}
+
 export default function HoldingsPage() {
   const [holdings, setHoldings] = useState<Holding[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -191,6 +254,10 @@ export default function HoldingsPage() {
   const [expandMovement, setExpandMovement] = useState(false);
   const [expandPerf, setExpandPerf] = useState(false);
   const [expandTrades, setExpandTrades] = useState(false);
+  // Per-table column sort (null = the table's natural default order).
+  const [moveSort, setMoveSort] = useState<ColSort | null>(null);
+  const [perfSort, setPerfSort] = useState<ColSort | null>(null);
+  const [tradeSort, setTradeSort] = useState<ColSort | null>(null);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
@@ -450,6 +517,25 @@ export default function HoldingsPage() {
     return arr;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [holdings, sortKey, sortDir]);
+
+  // Performance rows enriched with the derived columns so those are sortable
+  // too; default order is best-return-first when no column is chosen.
+  const perfSorted = (() => {
+    const enriched = (perf?.perAsset ?? []).map((p) => ({
+      ...p,
+      valueChange:
+        p.endValue != null && p.startValue != null ? p.endValue - p.startValue : null,
+      vsCost:
+        p.endPrice != null && p.cost_basis > 0
+          ? ((p.endPrice - p.cost_basis) / p.cost_basis) * 100
+          : null,
+    }));
+    return perfSort
+      ? sortRows(enriched, perfSort, ["ticker", "name"])
+      : enriched.sort(
+          (a, b) => (b.changePercent ?? -Infinity) - (a.changePercent ?? -Infinity)
+        );
+  })();
 
   const inputClass =
     "w-full px-3 py-2 border border-gbx-border text-sm font-data text-gbx-charcoal focus:border-gbx-teal focus:outline-none";
@@ -1213,10 +1299,10 @@ export default function HoldingsPage() {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gbx-border">
-                      <th className="text-left py-2 pr-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">Holding</th>
-                      <th className="hidden sm:table-cell text-right py-2 px-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">Value</th>
+                      <SortTh label="Holding" k="ticker" sort={moveSort} onSort={makeToggle(setMoveSort, ["ticker"])} className="text-left py-2 pr-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium" />
+                      <SortTh label="Value" k="value" sort={moveSort} onSort={makeToggle(setMoveSort, ["ticker"])} className="hidden sm:table-cell text-right py-2 px-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium" />
                       {MOVE_COLS.map((c) => (
-                        <th key={c.key} className="text-right py-2 px-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">{c.label}</th>
+                        <SortTh key={c.key} label={c.label} k={c.key} sort={moveSort} onSort={makeToggle(setMoveSort, ["ticker"])} className="text-right py-2 px-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium" />
                       ))}
                     </tr>
                   </thead>
@@ -1235,7 +1321,7 @@ export default function HoldingsPage() {
                         })}
                       </tr>
                     )}
-                    {(expandMovement ? movement.holdings : movement.holdings.slice(0, 5)).map((h) => (
+                    {sortRows(movement.holdings, moveSort, ["ticker"]).slice(0, expandMovement ? undefined : 5).map((h) => (
                       <tr key={h.ticker} className="border-b border-gbx-border/50">
                         <td className="py-2.5 pr-3 font-data text-gbx-charcoal">{h.ticker.replace(/\.AX$/, "")}</td>
                         <td className="hidden sm:table-cell py-2.5 px-3 text-right font-data text-gbx-muted">{h.value != null ? formatCurrency(h.value) : "—"}</td>
@@ -1280,30 +1366,27 @@ export default function HoldingsPage() {
                   <thead>
                     <tr className="border-b border-gbx-border">
                       {([
-                        ["Ticker", ""],
-                        ["Name", "hidden lg:table-cell"],
-                        ["Start Price", "hidden md:table-cell"],
-                        ["End Price", "hidden sm:table-cell"],
-                        ["Return", ""],
-                        ["Value Change", ""],
-                        ["Vs Cost Basis", "hidden md:table-cell"],
-                      ] as [string, string][]).map(([h, cls]) => (
-                        <th
+                        ["Ticker", "", "ticker"],
+                        ["Name", "hidden lg:table-cell", "name"],
+                        ["Start Price", "hidden md:table-cell", "startPrice"],
+                        ["End Price", "hidden sm:table-cell", "endPrice"],
+                        ["Return", "", "changePercent"],
+                        ["Value Change", "", "valueChange"],
+                        ["Vs Cost Basis", "hidden md:table-cell", "vsCost"],
+                      ] as [string, string, string][]).map(([h, cls, key]) => (
+                        <SortTh
                           key={h}
-                          className={`px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted ${cls}`}
-                        >
-                          {h}
-                        </th>
+                          label={h}
+                          k={key}
+                          sort={perfSort}
+                          onSort={makeToggle(setPerfSort, ["ticker", "name"])}
+                          className={`px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] font-body font-medium ${cls}`}
+                        />
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {[...perf.perAsset]
-                      .sort(
-                        (a, b) =>
-                          (b.changePercent ?? -Infinity) -
-                          (a.changePercent ?? -Infinity)
-                      )
+                    {perfSorted
                       .slice(0, expandPerf ? undefined : 5)
                       .map((p) => (
                         <tr
@@ -1423,28 +1506,30 @@ export default function HoldingsPage() {
               <thead>
                 <tr className="border-y border-gbx-border">
                   {([
-                    ["Date", ""],
-                    ["Side", ""],
-                    ["Ticker", ""],
-                    ["Account", "hidden lg:table-cell"],
-                    ["Units", "hidden sm:table-cell"],
-                    ["Price", "hidden sm:table-cell"],
-                    ["Fees", "hidden xl:table-cell"],
-                    ["Total", ""],
-                    ["Realised P&L", ""],
-                    ["", ""],
-                  ] as [string, string][]).map(([h, cls], i) => (
-                    <th
+                    ["Date", "", "trade_date"],
+                    ["Side", "", "side"],
+                    ["Ticker", "", "ticker"],
+                    ["Account", "hidden lg:table-cell", "account_name"],
+                    ["Units", "hidden sm:table-cell", "units"],
+                    ["Price", "hidden sm:table-cell", "price"],
+                    ["Fees", "hidden xl:table-cell", "fees"],
+                    ["Total", "", "total_value"],
+                    ["Realised P&L", "", "realised"],
+                    ["", "", ""],
+                  ] as [string, string, string][]).map(([h, cls, key], i) => (
+                    <SortTh
                       key={i}
-                      className={`px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted ${cls}`}
-                    >
-                      {h}
-                    </th>
+                      label={h}
+                      k={key || undefined}
+                      sort={tradeSort}
+                      onSort={makeToggle(setTradeSort, ["trade_date", "side", "ticker", "account_name"])}
+                      className={`px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] font-body font-medium ${cls}`}
+                    />
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {(expandTrades ? trades : trades.slice(0, 5)).map((t) => (
+                {sortRows(trades, tradeSort, ["trade_date", "side", "ticker", "account_name"]).slice(0, expandTrades ? undefined : 5).map((t) => (
                   <tr
                     key={t.id}
                     className="border-b border-gbx-border/50 hover:bg-gbx-soft/30 transition-colors"
