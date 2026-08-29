@@ -1088,7 +1088,7 @@ export default function HoldingsPage() {
 
       {/* Performance */}
       {holdings.length > 0 && (
-        <div className="bg-white border border-gbx-border p-4 sm:p-6" style={{ order: orderOf("performance") }}>
+        <div className="bg-white border border-gbx-border p-4 sm:p-6 flex flex-col" style={{ order: orderOf("performance") }}>
           <div className="flex items-center justify-between flex-wrap gap-4 mb-6">
             <div>
               <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal">
@@ -1182,8 +1182,9 @@ export default function HoldingsPage() {
             </div>
           )}
 
-          {/* Movement over 24h / 7d / 1M / 3M — independent of the period picker */}
-          <div className="mb-8">
+          {/* Movement over 24h / 7d / 1M / 3M — independent of the period picker.
+              order:1 keeps it below the chart, which stays under the toggles. */}
+          <div className="mt-8" style={{ order: 1 }}>
             <div className="flex items-baseline justify-between mb-3">
               <h3 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">
                 Movement

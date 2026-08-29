@@ -50,8 +50,8 @@ export default function NetWorthChart({
   }
 
   return (
-    <ResponsiveContainer width="100%" height={280}>
-      <AreaChart data={data} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+    <ResponsiveContainer width="100%" height={300}>
+      <AreaChart data={data} margin={{ top: 5, right: 5, bottom: 24, left: 5 }}>
         <defs>
           <linearGradient id="tealGrad" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="#2E8B6E" stopOpacity={0.2} />
@@ -63,6 +63,12 @@ export default function NetWorthChart({
           tickFormatter={formatDate}
           axisLine={false}
           tickLine={false}
+          angle={-45}
+          textAnchor="end"
+          height={52}
+          minTickGap={28}
+          tickMargin={8}
+          interval="preserveStartEnd"
           tick={{ fontSize: 11, fontFamily: "var(--font-dm-mono)", fill: "#8A8578" }}
         />
         <YAxis
