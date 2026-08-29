@@ -126,6 +126,52 @@ function formatPercent(value: number | null): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(2)}%`;
 }
 
+// Crypto positions in this app are quoted against a fiat pair (e.g. XRP-AUD,
+// BONK-USD); listed securities use an exchange suffix (.AX) or a plain symbol.
+function isCrypto(ticker: string): boolean {
+  return /-(USD|AUD|USDT|EUR|GBP)$/i.test(ticker || "");
+}
+
+type KindFilter = "all" | "listed" | "crypto";
+
+function passesKind(ticker: string, f: KindFilter): boolean {
+  if (f === "all") return true;
+  return f === "crypto" ? isCrypto(ticker) : !isCrypto(ticker);
+}
+
+// A small dot before a ticker: warm gold for crypto, teal for listed.
+function KindDot({ ticker }: { ticker: string }) {
+  const c = isCrypto(ticker);
+  return (
+    <span
+      className="inline-block w-1.5 h-1.5 rounded-full mr-2 align-middle shrink-0"
+      style={{ background: c ? "#C68A2E" : "#2E8B6E" }}
+      title={c ? "Crypto" : "Listed"}
+    />
+  );
+}
+
+// Compact All / Listed / Crypto filter for a card.
+function KindSelect({
+  value,
+  onChange,
+}: {
+  value: KindFilter;
+  onChange: (v: KindFilter) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value as KindFilter)}
+      className="bg-white border border-gbx-border text-[11px] uppercase tracking-[0.1em] font-body text-gbx-muted px-2 py-1.5 focus:outline-none focus:border-gbx-teal cursor-pointer"
+    >
+      <option value="all">All assets</option>
+      <option value="listed">Listed</option>
+      <option value="crypto">Crypto</option>
+    </select>
+  );
+}
+
 type ColSort = { key: string; dir: 1 | -1 };
 
 // Generic column sort: nulls sink, strings collate, numbers compare.
@@ -258,6 +304,11 @@ export default function HoldingsPage() {
   const [moveSort, setMoveSort] = useState<ColSort | null>(null);
   const [perfSort, setPerfSort] = useState<ColSort | null>(null);
   const [tradeSort, setTradeSort] = useState<ColSort | null>(null);
+  // Per-card asset-class filter (all / listed / crypto).
+  const [holdingsFilter, setHoldingsFilter] = useState<KindFilter>("all");
+  const [moveFilter, setMoveFilter] = useState<KindFilter>("all");
+  const [perfFilter, setPerfFilter] = useState<KindFilter>("all");
+  const [tradeFilter, setTradeFilter] = useState<KindFilter>("all");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
@@ -477,15 +528,19 @@ export default function HoldingsPage() {
     if (p !== "custom") loadPerformance(p);
   }
 
-  const totalMarketValue = holdings.reduce(
+  // The holdings table (and its footer totals) respect its asset-class filter.
+  const filteredHoldings = holdings.filter((h) =>
+    passesKind(h.ticker, holdingsFilter)
+  );
+  const totalMarketValue = filteredHoldings.reduce(
     (sum, h) => sum + (h.market_value || 0),
     0
   );
-  const totalCost = holdings.reduce((sum, h) => sum + h.total_cost, 0);
+  const totalCost = filteredHoldings.reduce((sum, h) => sum + h.total_cost, 0);
   const totalGainLoss = totalMarketValue - totalCost;
   const totalGainLossPercent =
     totalCost > 0 ? (totalGainLoss / totalCost) * 100 : 0;
-  const totalAnnualIncome = holdings.reduce(
+  const totalAnnualIncome = filteredHoldings.reduce(
     (sum, h) => sum + (h.annual_income || 0),
     0
   );
@@ -504,7 +559,7 @@ export default function HoldingsPage() {
   }
 
   const sortedHoldings = useMemo(() => {
-    const arr = [...holdings];
+    const arr = holdings.filter((h) => passesKind(h.ticker, holdingsFilter));
     const isString = STRING_SORT_KEYS.includes(sortKey);
     arr.sort((a, b) => {
       const av = (a as unknown as Record<string, unknown>)[sortKey];
@@ -516,20 +571,22 @@ export default function HoldingsPage() {
     });
     return arr;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [holdings, sortKey, sortDir]);
+  }, [holdings, sortKey, sortDir, holdingsFilter]);
 
   // Performance rows enriched with the derived columns so those are sortable
   // too; default order is best-return-first when no column is chosen.
   const perfSorted = (() => {
-    const enriched = (perf?.perAsset ?? []).map((p) => ({
-      ...p,
-      valueChange:
-        p.endValue != null && p.startValue != null ? p.endValue - p.startValue : null,
-      vsCost:
-        p.endPrice != null && p.cost_basis > 0
-          ? ((p.endPrice - p.cost_basis) / p.cost_basis) * 100
-          : null,
-    }));
+    const enriched = (perf?.perAsset ?? [])
+      .filter((p) => passesKind(p.ticker, perfFilter))
+      .map((p) => ({
+        ...p,
+        valueChange:
+          p.endValue != null && p.startValue != null ? p.endValue - p.startValue : null,
+        vsCost:
+          p.endPrice != null && p.cost_basis > 0
+            ? ((p.endPrice - p.cost_basis) / p.cost_basis) * 100
+            : null,
+      }));
     return perfSort
       ? sortRows(enriched, perfSort, ["ticker", "name"])
       : enriched.sort(
@@ -990,7 +1047,14 @@ export default function HoldingsPage() {
           </p>
         </div>
       ) : (
-        <div className="bg-white border border-gbx-border overflow-x-auto" style={{ order: orderOf("holdings") }}>
+        <div className="bg-white border border-gbx-border" style={{ order: orderOf("holdings") }}>
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gbx-border">
+            <span className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">
+              Holdings
+            </span>
+            <KindSelect value={holdingsFilter} onChange={setHoldingsFilter} />
+          </div>
+          <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
               <tr className="border-b border-gbx-border">
@@ -1033,7 +1097,8 @@ export default function HoldingsPage() {
                   key={h.id}
                   className="border-b border-gbx-border/50 hover:bg-gbx-soft/30 transition-colors"
                 >
-                  <td className="px-4 py-3 font-data text-sm font-medium text-gbx-charcoal">
+                  <td className="px-4 py-3 font-data text-sm font-medium text-gbx-charcoal whitespace-nowrap">
+                    <KindDot ticker={h.ticker} />
                     {h.ticker}
                   </td>
                   <td className="hidden xl:table-cell px-4 py-3 text-sm font-body text-gbx-charcoal max-w-[200px] truncate">
@@ -1182,6 +1247,7 @@ export default function HoldingsPage() {
               {new Date(lastUpdated + "Z").toLocaleString("en-AU")}
             </p>
           )}
+          </div>
         </div>
       )}
 
@@ -1245,6 +1311,7 @@ export default function HoldingsPage() {
                   {label}
                 </button>
               ))}
+              <KindSelect value={perfFilter} onChange={setPerfFilter} />
             </div>
           </div>
 
@@ -1284,13 +1351,16 @@ export default function HoldingsPage() {
           {/* Movement over 24h / 7d / 1M / 3M — independent of the period picker.
               order:1 keeps it below the chart, which stays under the toggles. */}
           <div className="mt-8" style={{ order: 1 }}>
-            <div className="flex items-baseline justify-between mb-3">
+            <div className="flex items-center justify-between mb-3 gap-3">
               <h3 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">
                 Movement
               </h3>
-              {movement?.asOf && (
-                <span className="text-[10px] text-gbx-muted font-data">as of {movement.asOf}</span>
-              )}
+              <div className="flex items-center gap-3">
+                {movement?.asOf && (
+                  <span className="text-[10px] text-gbx-muted font-data hidden sm:inline">as of {movement.asOf}</span>
+                )}
+                <KindSelect value={moveFilter} onChange={setMoveFilter} />
+              </div>
             </div>
             {movementLoading && !movement ? (
               <p className="text-gbx-muted font-body text-sm py-4">Loading movement…</p>
@@ -1307,7 +1377,7 @@ export default function HoldingsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {movement.totals && (
+                    {movement.totals && moveFilter === "all" && (
                       <tr className="border-b border-gbx-border bg-gbx-soft/40">
                         <td className="py-2.5 pr-3 font-body font-medium text-gbx-charcoal">Portfolio</td>
                         <td className="hidden sm:table-cell py-2.5 px-3 text-right font-data text-gbx-charcoal">{formatCurrency(movement.totals.value)}</td>
@@ -1321,9 +1391,9 @@ export default function HoldingsPage() {
                         })}
                       </tr>
                     )}
-                    {sortRows(movement.holdings, moveSort, ["ticker"]).slice(0, expandMovement ? undefined : 5).map((h) => (
+                    {sortRows(movement.holdings.filter((h) => passesKind(h.ticker, moveFilter)), moveSort, ["ticker"]).slice(0, expandMovement ? undefined : 5).map((h) => (
                       <tr key={h.ticker} className="border-b border-gbx-border/50">
-                        <td className="py-2.5 pr-3 font-data text-gbx-charcoal">{h.ticker.replace(/\.AX$/, "")}</td>
+                        <td className="py-2.5 pr-3 font-data text-gbx-charcoal whitespace-nowrap"><KindDot ticker={h.ticker} />{h.ticker.replace(/\.AX$/, "")}</td>
                         <td className="hidden sm:table-cell py-2.5 px-3 text-right font-data text-gbx-muted">{h.value != null ? formatCurrency(h.value) : "—"}</td>
                         {MOVE_COLS.map((c) => {
                           const v = h[c.key] as number | null;
@@ -1337,12 +1407,12 @@ export default function HoldingsPage() {
                     ))}
                   </tbody>
                 </table>
-                {movement.holdings.length > 5 && (
+                {movement.holdings.filter((h) => passesKind(h.ticker, moveFilter)).length > 5 && (
                   <button
                     onClick={() => setExpandMovement((v) => !v)}
                     className="w-full py-2.5 text-[11px] text-gbx-teal uppercase tracking-[0.12em] font-body font-medium hover:bg-gbx-soft/40 border-t border-gbx-border transition-colors"
                   >
-                    {expandMovement ? "Show less" : `Show all ${movement.holdings.length}`}
+                    {expandMovement ? "Show less" : `Show all ${movement.holdings.filter((h) => passesKind(h.ticker, moveFilter)).length}`}
                   </button>
                 )}
               </div>
@@ -1393,7 +1463,8 @@ export default function HoldingsPage() {
                           key={p.ticker}
                           className="border-b border-gbx-border/50 hover:bg-gbx-soft/30 transition-colors"
                         >
-                          <td className="px-4 py-3 font-data text-sm font-medium text-gbx-charcoal">
+                          <td className="px-4 py-3 font-data text-sm font-medium text-gbx-charcoal whitespace-nowrap">
+                            <KindDot ticker={p.ticker} />
                             {p.ticker}
                           </td>
                           <td className="hidden lg:table-cell px-4 py-3 text-sm font-body text-gbx-charcoal max-w-[200px] truncate">
@@ -1456,12 +1527,12 @@ export default function HoldingsPage() {
                   </tbody>
                 </table>
               </div>
-              {perf.perAsset.length > 5 && (
+              {perfSorted.length > 5 && (
                 <button
                   onClick={() => setExpandPerf((v) => !v)}
                   className="w-full mt-2 py-2.5 text-[11px] text-gbx-teal uppercase tracking-[0.12em] font-body font-medium hover:bg-gbx-soft/40 border-t border-gbx-border transition-colors"
                 >
-                  {expandPerf ? "Show less" : `Show all ${perf.perAsset.length}`}
+                  {expandPerf ? "Show less" : `Show all ${perfSorted.length}`}
                 </button>
               )}
             </>
@@ -1477,23 +1548,26 @@ export default function HoldingsPage() {
 
       {/* Trade history */}
       <div className="bg-white border border-gbx-border" style={{ order: orderOf("trades") }}>
-        <div className="px-6 pt-6 pb-4 flex items-baseline justify-between">
+        <div className="px-6 pt-6 pb-4 flex items-center justify-between gap-3 flex-wrap">
           <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal">
             Trade History
           </h2>
-          {trades.length > 0 && (
-            <p className="text-xs font-body text-gbx-muted">
-              Total realised:{" "}
-              <span
-                className={`font-data ${
-                  totalRealised >= 0 ? "text-gbx-teal" : "text-red-600"
-                }`}
-              >
-                {totalRealised >= 0 ? "+" : ""}
-                {formatCurrency(totalRealised)}
-              </span>
-            </p>
-          )}
+          <div className="flex items-center gap-3">
+            {trades.length > 0 && (
+              <p className="text-xs font-body text-gbx-muted">
+                Total realised:{" "}
+                <span
+                  className={`font-data ${
+                    totalRealised >= 0 ? "text-gbx-teal" : "text-red-600"
+                  }`}
+                >
+                  {totalRealised >= 0 ? "+" : ""}
+                  {formatCurrency(totalRealised)}
+                </span>
+              </p>
+            )}
+            <KindSelect value={tradeFilter} onChange={setTradeFilter} />
+          </div>
         </div>
         {trades.length === 0 ? (
           <p className="px-6 pb-6 text-gbx-muted font-body text-sm">
@@ -1529,7 +1603,7 @@ export default function HoldingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {sortRows(trades, tradeSort, ["trade_date", "side", "ticker", "account_name"]).slice(0, expandTrades ? undefined : 5).map((t) => (
+                {sortRows(trades.filter((t) => passesKind(t.ticker, tradeFilter)), tradeSort, ["trade_date", "side", "ticker", "account_name"]).slice(0, expandTrades ? undefined : 5).map((t) => (
                   <tr
                     key={t.id}
                     className="border-b border-gbx-border/50 hover:bg-gbx-soft/30 transition-colors"
@@ -1548,7 +1622,8 @@ export default function HoldingsPage() {
                         {t.side}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-data text-sm font-medium text-gbx-charcoal">
+                    <td className="px-4 py-3 font-data text-sm font-medium text-gbx-charcoal whitespace-nowrap">
+                      <KindDot ticker={t.ticker} />
                       {t.ticker}
                     </td>
                     <td className="hidden lg:table-cell px-4 py-3 text-xs font-body text-gbx-muted">
@@ -1597,12 +1672,12 @@ export default function HoldingsPage() {
                 ))}
               </tbody>
             </table>
-            {trades.length > 5 && (
+            {trades.filter((t) => passesKind(t.ticker, tradeFilter)).length > 5 && (
               <button
                 onClick={() => setExpandTrades((v) => !v)}
                 className="w-full py-2.5 text-[11px] text-gbx-teal uppercase tracking-[0.12em] font-body font-medium hover:bg-gbx-soft/40 border-t border-gbx-border transition-colors"
               >
-                {expandTrades ? "Show less" : `Show all ${trades.length}`}
+                {expandTrades ? "Show less" : `Show all ${trades.filter((t) => passesKind(t.ticker, tradeFilter)).length}`}
               </button>
             )}
           </div>
