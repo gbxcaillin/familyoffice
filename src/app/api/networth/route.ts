@@ -32,6 +32,36 @@ export async function GET() {
     ORDER BY date ASC
   `).all() as BalanceRow[];
 
+  // Net-worth movement over 24h / 7d / 1m / 3m: compare today's total against
+  // the snapshot on or nearest before each look-back date. "24h" means "since
+  // the previous daily snapshot" — there is no intraday history.
+  const latestSnap = db
+    .prepare("SELECT date, total_net_worth FROM snapshots ORDER BY date DESC LIMIT 1")
+    .get() as { date: string; total_net_worth: number } | undefined;
+  const pastAt = db.prepare(
+    "SELECT date, total_net_worth FROM snapshots WHERE date <= ? ORDER BY date DESC LIMIT 1"
+  );
+  const moveOver = (days: number) => {
+    if (!latestSnap) return null;
+    const target = new Date();
+    target.setDate(target.getDate() - days);
+    const targetISO = target.toISOString().slice(0, 10);
+    const past = pastAt.get(targetISO) as
+      | { date: string; total_net_worth: number }
+      | undefined;
+    // Require the reference point to actually predate today's snapshot.
+    if (!past || past.date >= latestSnap.date) return null;
+    const abs = latestSnap.total_net_worth - past.total_net_worth;
+    const base = Math.abs(past.total_net_worth);
+    return { abs, pct: base > 0 ? (abs / base) * 100 : null, from: past.date };
+  };
+  const movement = {
+    d1: moveOver(1),
+    d7: moveOver(7),
+    d30: moveOver(30),
+    d90: moveOver(90),
+  };
+
   const recentSpending = db.prepare(`
     SELECT category, SUM(ABS(amount)) as total
     FROM transactions
@@ -54,6 +84,7 @@ export async function GET() {
 
   return NextResponse.json({
     ...totals,
+    movement,
     balanceHistory,
     recentSpending,
     recentIncome: recentIncome?.total || 0,

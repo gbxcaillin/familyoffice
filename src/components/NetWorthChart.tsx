@@ -24,9 +24,12 @@ function formatCurrency(value: number): string {
   return `$${value.toFixed(0)}`;
 }
 
+// e.g. "29 Aug '26" — day + short month + 2-digit year so the year is clear.
 function formatDate(dateStr: string): string {
   const d = new Date(dateStr);
-  return d.toLocaleDateString("en-AU", { month: "short", day: "numeric" });
+  const mon = d.toLocaleDateString("en-AU", { month: "short" });
+  const yy = String(d.getFullYear()).slice(-2);
+  return `${d.getDate()} ${mon} '${yy}`;
 }
 
 export default function NetWorthChart({

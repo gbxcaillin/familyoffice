@@ -151,4 +151,82 @@ export async function getDividendHistory(
   }
 }
 
+// Daily close series per ticker over [from, to], converted to AUD (USD series
+// use the forward-filled USD/AUD rate). Used for period-movement calculations.
+export async function getDailySeriesAUD(
+  tickers: string[],
+  from: Date,
+  to: Date
+): Promise<Record<string, { date: string; close: number }[]>> {
+  const out: Record<string, { date: string; close: number }[]> = {};
+  if (tickers.length === 0) return out;
+
+  const yahooFinance = await getYahoo();
+  const currencyByTicker: Record<string, string> = {};
+
+  await Promise.all(
+    tickers.map(async (ticker) => {
+      try {
+        const result: any = await yahooFinance.chart(normaliseTicker(ticker), {
+          period1: from,
+          period2: to,
+          interval: "1d",
+        });
+        const quotes = (result?.quotes || [])
+          .filter((q: any) => q.close !== null && q.close !== undefined)
+          .map((q: any) => ({
+            date: new Date(q.date).toISOString().slice(0, 10),
+            close: q.close as number,
+          }));
+        if (quotes.length > 0) {
+          out[ticker] = quotes;
+          currencyByTicker[ticker] = result?.meta?.currency || "AUD";
+        }
+      } catch {
+        // No history for this ticker in the window.
+      }
+    })
+  );
+
+  // Convert USD-denominated series to AUD using the historical rate.
+  const usdTickers = Object.keys(out).filter((t) => currencyByTicker[t] === "USD");
+  if (usdTickers.length > 0) {
+    try {
+      const fxResult: any = await yahooFinance.chart("AUD=X", {
+        period1: from,
+        period2: to,
+        interval: "1d",
+      });
+      const fxSeries = (fxResult?.quotes || [])
+        .filter((q: any) => q.close !== null && q.close !== undefined)
+        .map((q: any) => ({
+          date: new Date(q.date).toISOString().slice(0, 10),
+          close: q.close as number,
+        }));
+      if (fxSeries.length > 0) {
+        const fxMap = new Map<string, number>(
+          fxSeries.map((q: { date: string; close: number }) => [q.date, q.close])
+        );
+        const fxDates = fxSeries.map((q: { date: string }) => q.date).sort();
+        const rateAt = (date: string): number => {
+          if (fxMap.has(date)) return fxMap.get(date)!;
+          let last = fxSeries[0].close;
+          for (const d of fxDates) {
+            if (d > date) break;
+            last = fxMap.get(d)!;
+          }
+          return last;
+        };
+        for (const t of usdTickers) {
+          out[t] = out[t].map((q) => ({ date: q.date, close: q.close * rateAt(q.date) }));
+        }
+      }
+    } catch {
+      // If FX history is unavailable the USD series stays unconverted.
+    }
+  }
+
+  return out;
+}
+
 export { EXCHANGE_SUFFIXES };

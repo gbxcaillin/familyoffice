@@ -14,6 +14,7 @@ interface NetWorthData {
   jointTotal: number;
   holdingsTotal: number;
   byType: Record<string, number>;
+  movement?: Record<string, MovementDelta | null>;
   balanceHistory: { date: string; total: number }[];
   recentSpending: { category: string; total: number }[];
   recentIncome: number;
@@ -38,6 +39,59 @@ function formatCurrency(value: number): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+interface MovementDelta {
+  abs: number;
+  pct: number | null;
+  from: string;
+}
+
+// A row of net-worth movement chips (24h / 7d / 1m / 3m). Each shows the
+// dollar change and % since the reference snapshot; "—" when there isn't
+// enough snapshot history yet.
+function MovementChips({ movement }: { movement?: Record<string, MovementDelta | null> }) {
+  const periods: { key: string; label: string }[] = [
+    { key: "d1", label: "24h" },
+    { key: "d7", label: "7d" },
+    { key: "d30", label: "1M" },
+    { key: "d90", label: "3M" },
+  ];
+  const fmtAbs = (v: number) =>
+    `${v >= 0 ? "+" : "−"}${new Intl.NumberFormat("en-AU", {
+      style: "currency",
+      currency: "AUD",
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(Math.abs(v))}`;
+
+  return (
+    <div className="grid grid-cols-4 gap-2 sm:gap-3">
+      {periods.map(({ key, label }) => {
+        const m = movement?.[key];
+        const up = m ? m.abs >= 0 : true;
+        return (
+          <div key={key} className="bg-white border border-gbx-border p-2.5 sm:p-3">
+            <p className="text-[9px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">
+              {label}
+            </p>
+            {m ? (
+              <>
+                <p className={`font-data text-xs sm:text-sm mt-0.5 ${up ? "text-gbx-teal" : "text-red-500"}`}>
+                  {up ? "▲" : "▼"} {m.pct != null ? `${Math.abs(m.pct).toFixed(2)}%` : "—"}
+                </p>
+                <p className={`text-[10px] sm:text-[11px] font-data ${up ? "text-gbx-teal/80" : "text-red-500/80"}`}>
+                  {fmtAbs(m.abs)}
+                </p>
+              </>
+            ) : (
+              <p className="font-data text-xs sm:text-sm mt-0.5 text-gbx-muted">—</p>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 function StatCard({
@@ -261,6 +315,8 @@ export default function DashboardPage() {
             onClick={() => pick("joint")}
           />
         </div>
+
+        <MovementChips movement={data.movement} />
 
         {selected && breakdown && (
           <BreakdownPanel

@@ -85,6 +85,33 @@ interface PerfData {
 
 type PerfPeriod = "1y" | "3y" | "5y" | "all" | "custom";
 
+interface MovementRow {
+  ticker: string;
+  name: string;
+  units: number;
+  value: number | null;
+  m24h: number | null;
+  m7d: number | null;
+  m1m: number | null;
+  m3m: number | null;
+}
+interface MovementTotal {
+  abs: number;
+  pct: number;
+}
+interface MovementData {
+  holdings: MovementRow[];
+  totals: ({ value: number } & Record<string, MovementTotal | null>) | null;
+  asOf: string | null;
+}
+
+const MOVE_COLS: { key: keyof MovementRow; label: string }[] = [
+  { key: "m24h", label: "24h" },
+  { key: "m7d", label: "7d" },
+  { key: "m1m", label: "1M" },
+  { key: "m3m", label: "3M" },
+];
+
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-AU", {
     style: "currency",
@@ -157,6 +184,8 @@ export default function HoldingsPage() {
   const [perf, setPerf] = useState<PerfData | null>(null);
   const [perfPeriod, setPerfPeriod] = useState<PerfPeriod>("1y");
   const [perfLoading, setPerfLoading] = useState(false);
+  const [movement, setMovement] = useState<MovementData | null>(null);
+  const [movementLoading, setMovementLoading] = useState(false);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
@@ -171,6 +200,17 @@ export default function HoldingsPage() {
     const data = await res.json();
     setTrades(data.trades || []);
     setTotalRealised(data.totalRealised || 0);
+  }, []);
+
+  const loadMovement = useCallback(async () => {
+    setMovementLoading(true);
+    try {
+      const res = await fetch("/api/holdings/movement");
+      const data = await res.json();
+      if (!data.error) setMovement(data);
+    } finally {
+      setMovementLoading(false);
+    }
   }, []);
 
   const loadPerformance = useCallback(
@@ -212,9 +252,12 @@ export default function HoldingsPage() {
       setTrades(t.trades || []);
       setTotalRealised(t.totalRealised || 0);
       setLoading(false);
-      if (h.length > 0) loadPerformance("1y");
+      if (h.length > 0) {
+        loadPerformance("1y");
+        loadMovement();
+      }
     });
-  }, [loadPerformance]);
+  }, [loadPerformance, loadMovement]);
 
   async function handleRefresh() {
     setRefreshing(true);
@@ -1138,6 +1181,67 @@ export default function HoldingsPage() {
               </button>
             </div>
           )}
+
+          {/* Movement over 24h / 7d / 1M / 3M — independent of the period picker */}
+          <div className="mb-8">
+            <div className="flex items-baseline justify-between mb-3">
+              <h3 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">
+                Movement
+              </h3>
+              {movement?.asOf && (
+                <span className="text-[10px] text-gbx-muted font-data">as of {movement.asOf}</span>
+              )}
+            </div>
+            {movementLoading && !movement ? (
+              <p className="text-gbx-muted font-body text-sm py-4">Loading movement…</p>
+            ) : movement && movement.holdings.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gbx-border">
+                      <th className="text-left py-2 pr-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">Holding</th>
+                      <th className="hidden sm:table-cell text-right py-2 px-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">Value</th>
+                      {MOVE_COLS.map((c) => (
+                        <th key={c.key} className="text-right py-2 px-3 text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-muted">{c.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {movement.totals && (
+                      <tr className="border-b border-gbx-border bg-gbx-soft/40">
+                        <td className="py-2.5 pr-3 font-body font-medium text-gbx-charcoal">Portfolio</td>
+                        <td className="hidden sm:table-cell py-2.5 px-3 text-right font-data text-gbx-charcoal">{formatCurrency(movement.totals.value)}</td>
+                        {MOVE_COLS.map((c) => {
+                          const t = movement.totals?.[c.key] as MovementTotal | null | undefined;
+                          return (
+                            <td key={c.key} className={`py-2.5 px-3 text-right font-data ${t ? (t.pct >= 0 ? "text-gbx-teal" : "text-red-600") : "text-gbx-muted"}`}>
+                              {t ? formatPercent(t.pct) : "—"}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    )}
+                    {movement.holdings.map((h) => (
+                      <tr key={h.ticker} className="border-b border-gbx-border/50">
+                        <td className="py-2.5 pr-3 font-data text-gbx-charcoal">{h.ticker.replace(/\.AX$/, "")}</td>
+                        <td className="hidden sm:table-cell py-2.5 px-3 text-right font-data text-gbx-muted">{h.value != null ? formatCurrency(h.value) : "—"}</td>
+                        {MOVE_COLS.map((c) => {
+                          const v = h[c.key] as number | null;
+                          return (
+                            <td key={c.key} className={`py-2.5 px-3 text-right font-data ${v != null ? (v >= 0 ? "text-gbx-teal" : "text-red-600") : "text-gbx-muted"}`}>
+                              {v != null ? formatPercent(v) : "—"}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-gbx-muted font-body text-sm py-4">No movement data yet.</p>
+            )}
+          </div>
 
           {perfLoading ? (
             <div className="h-64 flex items-center justify-center">
