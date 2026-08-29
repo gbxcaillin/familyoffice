@@ -67,6 +67,9 @@ export default function ImportPage() {
 
   const [analyzing, setAnalyzing] = useState(false);
   const [result, setResult] = useState<AnalyzeResult | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [keepCopy, setKeepCopy] = useState(true);
+  const [docReload, setDocReload] = useState(0);
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
   const [categoryOverrides, setCategoryOverrides] = useState<Record<number, string>>({});
   const [usMarket, setUsMarket] = useState(false);
@@ -84,6 +87,7 @@ export default function ImportPage() {
 
   function resetPreview() {
     setResult(null);
+    setFile(null);
     setExcluded(new Set());
     setCategoryOverrides({});
     setUsMarket(false);
@@ -93,6 +97,7 @@ export default function ImportPage() {
 
   async function handleFile(file: File) {
     resetPreview();
+    setFile(file);
     setAnalyzing(true);
     try {
       const fd = new FormData();
@@ -132,6 +137,22 @@ export default function ImportPage() {
   function applyMarket(ticker: string): string {
     if (!usMarket) return ticker;
     return ticker.endsWith(".AX") ? ticker.slice(0, -3) : ticker;
+  }
+
+  // After a successful import, optionally keep the original file in Stored
+  // Documents, tagged to the account it was imported into. Non-fatal.
+  async function archiveImportedFile() {
+    if (!keepCopy || !file) return;
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      if (accountId) fd.append("account_id", accountId);
+      fd.append("notes", `Imported: ${result?.label || file.name}`);
+      await fetch("/api/documents", { method: "POST", body: fd });
+      setDocReload((n) => n + 1); // refresh the Stored Documents section below
+    } catch {
+      // The data imported fine even if archiving the copy failed.
+    }
   }
 
   async function handleImport() {
@@ -187,6 +208,7 @@ export default function ImportPage() {
         setMessage(`Import failed: ${data.error}`);
       } else if (result.kind === "transactions") {
         setMessage(`Imported ${data.imported} transactions (${data.skipped} skipped).`);
+        await archiveImportedFile();
         resetPreview();
       } else if (result.kind === "trades") {
         setMessage(
@@ -196,6 +218,7 @@ export default function ImportPage() {
               : ""
           }`
         );
+        await archiveImportedFile();
         resetPreview();
       } else {
         setMessage(
@@ -205,6 +228,7 @@ export default function ImportPage() {
               : " Cost basis seeded from the statement — edit a holding to set the real entry price."
           }`
         );
+        await archiveImportedFile();
         resetPreview();
       }
     } finally {
@@ -298,6 +322,17 @@ export default function ImportPage() {
                   US tickers (drop .AX)
                 </label>
               )}
+              <label
+                className="flex items-center gap-1.5 text-[11px] font-body text-gbx-muted"
+                title="Also save the original file to Stored Documents, tagged to this account"
+              >
+                <input
+                  type="checkbox"
+                  checked={keepCopy}
+                  onChange={(e) => setKeepCopy(e.target.checked)}
+                />
+                Keep a copy in Documents
+              </label>
               <button
                 onClick={handleImport}
                 disabled={importing || !accountId || includedCount === 0}
@@ -417,7 +452,7 @@ export default function ImportPage() {
 
       {/* Stored documents — keep the original files for your records */}
       <div className="border-t border-gbx-border pt-8">
-        <DocumentsPanel />
+        <DocumentsPanel reloadSignal={docReload} />
       </div>
     </div>
   );

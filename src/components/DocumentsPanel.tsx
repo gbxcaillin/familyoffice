@@ -44,7 +44,11 @@ const inputClass =
 
 // Stored-documents archive: uploads the original file and keeps it (parses
 // nothing). Embedded as a section on the Import tab.
-export default function DocumentsPanel() {
+export default function DocumentsPanel({
+  reloadSignal,
+}: {
+  reloadSignal?: number;
+}) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,7 +73,7 @@ export default function DocumentsPanel() {
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, reloadSignal]);
 
   async function handleUpload(file: File) {
     setUploading(true);
