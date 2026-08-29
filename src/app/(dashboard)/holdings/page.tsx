@@ -186,6 +186,11 @@ export default function HoldingsPage() {
   const [perfLoading, setPerfLoading] = useState(false);
   const [movement, setMovement] = useState<MovementData | null>(null);
   const [movementLoading, setMovementLoading] = useState(false);
+  // Each Holdings-tab table collapses to its top 5 rows by default.
+  const [expandHoldings, setExpandHoldings] = useState(false);
+  const [expandMovement, setExpandMovement] = useState(false);
+  const [expandPerf, setExpandPerf] = useState(false);
+  const [expandTrades, setExpandTrades] = useState(false);
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
 
@@ -937,7 +942,7 @@ export default function HoldingsPage() {
               </tr>
             </thead>
             <tbody>
-              {sortedHoldings.map((h) => (
+              {(expandHoldings ? sortedHoldings : sortedHoldings.slice(0, 5)).map((h) => (
                 <tr
                   key={h.id}
                   className="border-b border-gbx-border/50 hover:bg-gbx-soft/30 transition-colors"
@@ -1077,6 +1082,14 @@ export default function HoldingsPage() {
               </tr>
             </tfoot>
           </table>
+          {sortedHoldings.length > 5 && (
+            <button
+              onClick={() => setExpandHoldings((v) => !v)}
+              className="w-full px-4 py-2.5 text-[11px] text-gbx-teal uppercase tracking-[0.12em] font-body font-medium hover:bg-gbx-soft/40 border-t border-gbx-border transition-colors"
+            >
+              {expandHoldings ? "Show less" : `Show all ${sortedHoldings.length}`}
+            </button>
+          )}
           {lastUpdated && (
             <p className="px-4 py-2 text-[10px] text-gbx-muted font-body border-t border-gbx-border/50">
               Prices last updated:{" "}
@@ -1222,7 +1235,7 @@ export default function HoldingsPage() {
                         })}
                       </tr>
                     )}
-                    {movement.holdings.map((h) => (
+                    {(expandMovement ? movement.holdings : movement.holdings.slice(0, 5)).map((h) => (
                       <tr key={h.ticker} className="border-b border-gbx-border/50">
                         <td className="py-2.5 pr-3 font-data text-gbx-charcoal">{h.ticker.replace(/\.AX$/, "")}</td>
                         <td className="hidden sm:table-cell py-2.5 px-3 text-right font-data text-gbx-muted">{h.value != null ? formatCurrency(h.value) : "—"}</td>
@@ -1238,6 +1251,14 @@ export default function HoldingsPage() {
                     ))}
                   </tbody>
                 </table>
+                {movement.holdings.length > 5 && (
+                  <button
+                    onClick={() => setExpandMovement((v) => !v)}
+                    className="w-full py-2.5 text-[11px] text-gbx-teal uppercase tracking-[0.12em] font-body font-medium hover:bg-gbx-soft/40 border-t border-gbx-border transition-colors"
+                  >
+                    {expandMovement ? "Show less" : `Show all ${movement.holdings.length}`}
+                  </button>
+                )}
               </div>
             ) : (
               <p className="text-gbx-muted font-body text-sm py-4">No movement data yet.</p>
@@ -1283,6 +1304,7 @@ export default function HoldingsPage() {
                           (b.changePercent ?? -Infinity) -
                           (a.changePercent ?? -Infinity)
                       )
+                      .slice(0, expandPerf ? undefined : 5)
                       .map((p) => (
                         <tr
                           key={p.ticker}
@@ -1351,6 +1373,14 @@ export default function HoldingsPage() {
                   </tbody>
                 </table>
               </div>
+              {perf.perAsset.length > 5 && (
+                <button
+                  onClick={() => setExpandPerf((v) => !v)}
+                  className="w-full mt-2 py-2.5 text-[11px] text-gbx-teal uppercase tracking-[0.12em] font-body font-medium hover:bg-gbx-soft/40 border-t border-gbx-border transition-colors"
+                >
+                  {expandPerf ? "Show less" : `Show all ${perf.perAsset.length}`}
+                </button>
+              )}
             </>
           ) : (
             <div className="h-32 flex items-center justify-center">
@@ -1414,7 +1444,7 @@ export default function HoldingsPage() {
                 </tr>
               </thead>
               <tbody>
-                {trades.map((t) => (
+                {(expandTrades ? trades : trades.slice(0, 5)).map((t) => (
                   <tr
                     key={t.id}
                     className="border-b border-gbx-border/50 hover:bg-gbx-soft/30 transition-colors"
@@ -1482,6 +1512,14 @@ export default function HoldingsPage() {
                 ))}
               </tbody>
             </table>
+            {trades.length > 5 && (
+              <button
+                onClick={() => setExpandTrades((v) => !v)}
+                className="w-full py-2.5 text-[11px] text-gbx-teal uppercase tracking-[0.12em] font-body font-medium hover:bg-gbx-soft/40 border-t border-gbx-border transition-colors"
+              >
+                {expandTrades ? "Show less" : `Show all ${trades.length}`}
+              </button>
+            )}
           </div>
         )}
       </div>
