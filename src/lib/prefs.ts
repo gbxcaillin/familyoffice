@@ -17,7 +17,6 @@ export const DEFAULT_PREFS: LayoutPrefs = {
     "super",
     "spending",
     "import",
-    "documents",
   ],
   dashboardOrder: ["stats", "charts", "allocation", "mortgage"],
   holdingsOrder: ["summary", "holdings", "performance", "trades"],

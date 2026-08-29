@@ -19,8 +19,7 @@ const LABELS: Record<string, Record<string, string>> = {
     holdings: "Holdings",
     super: "Super",
     spending: "Spending",
-    import: "Import",
-    documents: "Documents",
+    import: "Import & Docs",
   },
   dashboardOrder: {
     stats: "Net worth cards",

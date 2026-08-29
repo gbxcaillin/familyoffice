@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import DocumentsPanel from "@/components/DocumentsPanel";
 
 interface Account {
   id: string;
@@ -413,6 +414,11 @@ export default function ImportPage() {
           </div>
         </div>
       )}
+
+      {/* Stored documents — keep the original files for your records */}
+      <div className="border-t border-gbx-border pt-8">
+        <DocumentsPanel />
+      </div>
     </div>
   );
 }
