@@ -45,12 +45,24 @@ function xirr(flows: { date: Date; amount: number }[]): number | null {
   return (lo + hi) / 2;
 }
 
-// Money-weighted return since inception: every buy/sell as a dated cashflow,
-// plus today's market value of positions that came from those trades.
-function computeMoneyWeightedReturn(db: any): number | null {
+// Money-weighted return (XIRR) over a chosen window: the value of positions
+// held at the window start is an opening outflow, each buy/sell inside the
+// window is a dated cashflow, and the value of positions held at the window end
+// is the closing inflow. Annualised (p.a.). Restricted to traded tickers so it
+// reflects the investor's actual trading, priced from the already-fetched
+// historical series.
+function computeWindowedMWR(
+  db: any,
+  from: Date,
+  to: Date,
+  seriesByTicker: Record<string, { date: string; close: number }[]>
+): number | null {
+  const fromISO = from.toISOString().slice(0, 10);
+  const toISO = to.toISOString().slice(0, 10);
+
   const trades = db
     .prepare(
-      `SELECT trade_date, side, units, price, fees, account_id, UPPER(ticker) as ticker
+      `SELECT trade_date, side, units, price, fees, UPPER(ticker) as ticker
        FROM trades ORDER BY trade_date ASC`
     )
     .all() as {
@@ -59,37 +71,58 @@ function computeMoneyWeightedReturn(db: any): number | null {
     units: number;
     price: number;
     fees: number;
-    account_id: string;
     ticker: string;
   }[];
-
   if (trades.length === 0) return null;
 
-  const flows = trades.map((t) => ({
-    date: new Date(t.trade_date),
-    amount:
-      t.side === "buy"
-        ? -(t.units * t.price + t.fees)
-        : t.units * t.price - t.fees,
-  }));
+  const tickers = [...new Set(trades.map((t) => t.ticker))];
 
-  const tradedKeys = new Set(trades.map((t) => `${t.account_id}:${t.ticker}`));
-  const positions = db
-    .prepare(
-      `SELECT h.account_id, UPPER(h.ticker) as ticker, h.units, pc.price
-       FROM holdings h
-       LEFT JOIN price_cache pc ON UPPER(h.ticker) = UPPER(pc.ticker)
-       WHERE h.units > 0 AND pc.price IS NOT NULL`
-    )
-    .all() as { account_id: string; ticker: string; units: number; price: number }[];
-
-  let terminal = 0;
-  for (const p of positions) {
-    if (tradedKeys.has(`${p.account_id}:${p.ticker}`)) {
-      terminal += p.units * p.price;
+  // Latest close on or before a date (falls back to the earliest observation).
+  const priceAt = (ticker: string, dateISO: string): number | null => {
+    const s = seriesByTicker[ticker];
+    if (!s || s.length === 0) return null;
+    let px: number | null = null;
+    for (const q of s) {
+      if (q.date <= dateISO) px = q.close;
+      else break;
     }
+    return px == null ? s[0].close : px;
+  };
+  // Units of a ticker held on a date, reconstructed from trades.
+  const unitsHeldAt = (ticker: string, dateISO: string): number => {
+    let u = 0;
+    for (const t of trades) {
+      if (t.trade_date > dateISO) break; // globally date-ascending
+      if (t.ticker !== ticker) continue;
+      u += t.side === "buy" ? t.units : -t.units;
+    }
+    return u;
+  };
+
+  let openValue = 0;
+  let closeValue = 0;
+  for (const tk of tickers) {
+    const uf = unitsHeldAt(tk, fromISO);
+    const ut = unitsHeldAt(tk, toISO);
+    const pf = priceAt(tk, fromISO);
+    const pt = priceAt(tk, toISO);
+    if (uf > 1e-9 && pf != null) openValue += uf * pf;
+    if (ut > 1e-9 && pt != null) closeValue += ut * pt;
   }
-  if (terminal > 0) flows.push({ date: new Date(), amount: terminal });
+
+  const flows: { date: Date; amount: number }[] = [];
+  if (openValue > 0) flows.push({ date: from, amount: -openValue });
+  for (const t of trades) {
+    if (t.trade_date <= fromISO || t.trade_date > toISO) continue;
+    flows.push({
+      date: new Date(t.trade_date),
+      amount:
+        t.side === "buy"
+          ? -(t.units * t.price + t.fees)
+          : t.units * t.price - t.fees,
+    });
+  }
+  if (closeValue > 0) flows.push({ date: to, amount: closeValue });
 
   const rate = xirr(flows);
   return rate === null ? null : rate * 100;
@@ -292,7 +325,7 @@ export async function GET(request: NextRequest) {
 
   let moneyWeightedReturn: number | null = null;
   try {
-    moneyWeightedReturn = computeMoneyWeightedReturn(db);
+    moneyWeightedReturn = computeWindowedMWR(db, from, to, seriesByTicker);
   } catch {
     // Optional metric; never fail the endpoint over it.
   }

@@ -1280,7 +1280,7 @@ export default function HoldingsPage() {
                           ? "text-gbx-teal"
                           : "text-red-600"
                       }`}
-                      title="Money-weighted (XIRR) return of your actual trades, since first trade"
+                      title="Money-weighted (XIRR) return of your actual trades over the selected period, annualised"
                     >
                       · Your return {formatPercent(perf.moneyWeightedReturn)}{" "}
                       p.a.
