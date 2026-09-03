@@ -1,7 +1,15 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from "next/server";
 import getDb from "@/lib/db";
-import { getYahoo } from "@/lib/market";
+import { getYahoo, getDailySeriesAUD } from "@/lib/market";
+
+// A transparent, investable 70/30 growth benchmark: 70% growth assets
+// (Australian + international shares) and 30% defensive (fixed income).
+const BENCHMARK_70_30: { ticker: string; weight: number }[] = [
+  { ticker: "VAS.AX", weight: 0.35 },
+  { ticker: "VGS.AX", weight: 0.35 },
+  { ticker: "VAF.AX", weight: 0.3 },
+];
 
 interface PositionRow {
   ticker: string;
@@ -301,7 +309,7 @@ export async function GET(request: NextRequest) {
     positions.map((p) => [p.ticker, p.units])
   );
 
-  const portfolio: { date: string; total: number }[] = [];
+  const portfolio: { date: string; total: number; benchmark?: number }[] = [];
   for (const date of sortedDates) {
     for (const t of tickersWithData) {
       const px = priceMaps[t].get(date);
@@ -323,6 +331,54 @@ export async function GET(request: NextRequest) {
         100
       : null;
 
+  // 70/30 growth benchmark, normalised to start at the portfolio's opening
+  // value so the two lines share a start and diverge only by performance.
+  let benchmarkReturn: number | null = null;
+  if (portfolio.length >= 2) {
+    try {
+      const benchSeries = await getDailySeriesAUD(
+        BENCHMARK_70_30.map((b) => b.ticker),
+        from,
+        to
+      );
+      const legs = BENCHMARK_70_30.filter(
+        (b) => (benchSeries[b.ticker]?.length ?? 0) > 0
+      );
+      const wsum = legs.reduce((s, l) => s + l.weight, 0);
+      if (legs.length > 0 && wsum > 0) {
+        const priceOnOrBefore = (
+          s: { date: string; close: number }[],
+          date: string
+        ): number => {
+          let px = s[0].close;
+          for (const q of s) {
+            if (q.date <= date) px = q.close;
+            else break;
+          }
+          return px;
+        };
+        const base0 = portfolio[0].date;
+        const baseP: Record<string, number> = Object.fromEntries(
+          legs.map((l) => [l.ticker, priceOnOrBefore(benchSeries[l.ticker], base0)])
+        );
+        const factorAt = (date: string) =>
+          legs.reduce(
+            (s, l) =>
+              s +
+              (l.weight / wsum) *
+                (priceOnOrBefore(benchSeries[l.ticker], date) / baseP[l.ticker]),
+            0
+          );
+        const start = portfolio[0].total;
+        for (const pt of portfolio) pt.benchmark = Math.round(start * factorAt(pt.date));
+        benchmarkReturn =
+          (factorAt(portfolio[portfolio.length - 1].date) - 1) * 100;
+      }
+    } catch {
+      // Benchmark is optional; never fail the endpoint over it.
+    }
+  }
+
   let moneyWeightedReturn: number | null = null;
   try {
     moneyWeightedReturn = computeWindowedMWR(db, from, to, seriesByTicker);
@@ -337,6 +393,7 @@ export async function GET(request: NextRequest) {
     perAsset: perAsset.map(({ series: _series, ...rest }) => rest),
     portfolio,
     portfolioReturn,
+    benchmarkReturn,
     moneyWeightedReturn,
   });
 }

@@ -78,8 +78,9 @@ interface PerfData {
   to: string;
   interval: string;
   perAsset: PerfAsset[];
-  portfolio: { date: string; total: number }[];
+  portfolio: { date: string; total: number; benchmark?: number | null }[];
   portfolioReturn: number | null;
+  benchmarkReturn: number | null;
   moneyWeightedReturn: number | null;
 }
 
@@ -1271,6 +1272,14 @@ export default function HoldingsPage() {
                       }`}
                     >
                       Portfolio {formatPercent(perf.portfolioReturn)}
+                    </span>
+                  )}
+                  {perf.benchmarkReturn !== null && (
+                    <span
+                      className="font-data ml-2 text-gbx-muted"
+                      title="A 70/30 growth benchmark (70% shares, 30% bonds), over the selected period"
+                    >
+                      · Benchmark (70/30) {formatPercent(perf.benchmarkReturn)}
                     </span>
                   )}
                   {perf.moneyWeightedReturn !== null && (

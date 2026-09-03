@@ -6,12 +6,14 @@ import {
   XAxis,
   YAxis,
   Tooltip,
+  Legend,
   ResponsiveContainer,
 } from "recharts";
 
 interface DataPoint {
   date: string;
   total: number;
+  benchmark?: number | null;
 }
 
 function formatCurrency(value: number): string {
@@ -35,10 +37,13 @@ function formatDate(dateStr: string): string {
 export default function NetWorthChart({
   data,
   label = "Net Worth",
+  benchmarkLabel = "70/30 Benchmark",
 }: {
   data: DataPoint[];
   label?: string;
+  benchmarkLabel?: string;
 }) {
+  const hasBenchmark = data.some((d) => d.benchmark != null);
   if (data.length < 2) {
     return (
       <div className="h-64 flex items-center justify-center text-center text-gbx-muted text-sm font-body px-6">
@@ -79,7 +84,10 @@ export default function NetWorthChart({
           width={60}
         />
         <Tooltip
-          formatter={(value) => [`$${Number(value).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`, label]}
+          formatter={(value, name) => [
+            `$${Number(value).toLocaleString("en-AU", { minimumFractionDigits: 2 })}`,
+            String(name),
+          ]}
           labelFormatter={(label) => formatDate(String(label))}
           contentStyle={{
             background: "#1A1A1A",
@@ -90,13 +98,35 @@ export default function NetWorthChart({
             fontFamily: "var(--font-dm-mono)",
           }}
         />
+        {hasBenchmark && (
+          <Legend
+            wrapperStyle={{
+              fontSize: 11,
+              fontFamily: "var(--font-dm-mono)",
+              paddingTop: 8,
+            }}
+          />
+        )}
         <Area
           type="monotone"
           dataKey="total"
+          name={label}
           stroke="#2E8B6E"
           strokeWidth={2}
           fill="url(#tealGrad)"
         />
+        {hasBenchmark && (
+          <Area
+            type="monotone"
+            dataKey="benchmark"
+            name={benchmarkLabel}
+            stroke="#C68A2E"
+            strokeWidth={1.75}
+            strokeDasharray="5 4"
+            fill="none"
+            dot={false}
+          />
+        )}
       </AreaChart>
     </ResponsiveContainer>
   );
