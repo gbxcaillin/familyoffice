@@ -1263,23 +1263,12 @@ export default function HoldingsPage() {
               {perf && (
                 <p className="text-xs text-gbx-muted font-body mt-1">
                   {perf.from} to {perf.to}
-                  {perf.portfolioReturn !== null && (
-                    <span
-                      className={`font-data ml-2 ${
-                        perf.portfolioReturn >= 0
-                          ? "text-gbx-teal"
-                          : "text-red-600"
-                      }`}
-                    >
-                      Portfolio {formatPercent(perf.portfolioReturn)}
-                    </span>
-                  )}
                   {perf.benchmarkReturn !== null && (
                     <span
                       className="font-data ml-2 text-gbx-muted"
                       title="A 70/30 growth benchmark (70% shares, 30% bonds), over the selected period"
                     >
-                      · Benchmark (70/30) {formatPercent(perf.benchmarkReturn)}
+                      Benchmark (70/30) {formatPercent(perf.benchmarkReturn)}
                     </span>
                   )}
                   {perf.moneyWeightedReturn !== null && (
