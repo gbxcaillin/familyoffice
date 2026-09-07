@@ -193,6 +193,16 @@ function initSchema(db: Database.Database) {
     }
   }
 
+  // DRP drift tracking: estimated dividend-reinvestment units accrued since the
+  // holding was last synced to a statement, and when the cron last checked.
+  for (const col of ["drp_units_pending REAL DEFAULT 0", "drp_checked_at TEXT"]) {
+    try {
+      db.exec(`ALTER TABLE holdings ADD COLUMN ${col}`);
+    } catch {
+      // Column already exists.
+    }
+  }
+
   // The legacy per-holding `owner` override is no longer honoured: ownership now
   // resolves from pct_p1 (explicit share) or the account's owner. Stale values
   // in this column used to make the dashboard cards disagree with the drill-down

@@ -423,3 +423,79 @@ export async function syncDividends(db: Database.Database) {
 
   return { recorded, details };
 }
+
+// Detect DRP (dividend reinvestment) drift: when an ETF/share pays a
+// distribution that the broker reinvests as new units, the real unit count
+// grows but the app's stored units don't. This estimates the reinvested units
+// from each holding's distribution history since it was last synced and
+// accumulates them into `drp_units_pending` (a flag for the user to apply or
+// reconcile). It never changes `units` itself — the estimate is a heads-up, and
+// the exact figure comes from a statement re-import or the user applying it.
+export async function detectDrpDrift(db: Database.Database) {
+  const holdings = db
+    .prepare(
+      `SELECT h.id, UPPER(h.ticker) as ticker, h.units,
+              h.drp_checked_at, h.updated_at,
+              pc.price as price
+       FROM holdings h
+       LEFT JOIN price_cache pc ON UPPER(h.ticker) = UPPER(pc.ticker)
+       WHERE h.units > 0 AND pc.price IS NOT NULL`
+    )
+    .all() as {
+    id: string;
+    ticker: string;
+    units: number;
+    drp_checked_at: string | null;
+    updated_at: string | null;
+    price: number;
+  }[];
+
+  const today = new Date().toISOString().slice(0, 10);
+  const setPending = db.prepare(
+    "UPDATE holdings SET drp_units_pending = drp_units_pending + ?, drp_checked_at = ? WHERE id = ?"
+  );
+  const touch = db.prepare(
+    "UPDATE holdings SET drp_checked_at = ? WHERE id = ?"
+  );
+
+  let flagged = 0;
+  const details: string[] = [];
+
+  for (const h of holdings) {
+    // Baseline: only count distributions since the holding was last checked, or
+    // (first run) since it was last written/imported — earlier DRP is already
+    // in the imported unit count.
+    const sinceISO = h.drp_checked_at || h.updated_at || today;
+    const since = new Date(sinceISO);
+    if (isNaN(since.getTime())) {
+      touch.run(today, h.id);
+      continue;
+    }
+
+    let events;
+    try {
+      events = await getDividendHistory(h.ticker, since);
+    } catch {
+      continue; // leave the baseline unchanged; try again next run
+    }
+
+    // Distributions strictly after the baseline. Estimate reinvested units at
+    // the current price (good enough for a flag; the statement is exact).
+    let addUnits = 0;
+    for (const ev of events) {
+      if (ev.date > since && h.price > 0) {
+        addUnits += (ev.amount * h.units) / h.price;
+      }
+    }
+
+    if (addUnits > 1e-6) {
+      setPending.run(addUnits, today, h.id);
+      flagged += 1;
+      details.push(`${h.ticker} ~+${addUnits.toFixed(4)} units`);
+    } else {
+      touch.run(today, h.id);
+    }
+  }
+
+  return { flagged, details };
+}

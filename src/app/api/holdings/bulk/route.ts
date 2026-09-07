@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
      VALUES (?, ?, ?, ?, ?, ?)`
   );
   const update = db.prepare(
-    `UPDATE holdings SET units = ?, cost_basis = ?, name = COALESCE(name, ?), updated_at = datetime('now') WHERE id = ?`
+    `UPDATE holdings SET units = ?, cost_basis = ?, name = COALESCE(name, ?), drp_units_pending = 0, updated_at = datetime('now') WHERE id = ?`
   );
 
   let imported = 0;
@@ -93,6 +93,10 @@ export async function POST(request: NextRequest) {
       .prepare("SELECT units FROM holdings WHERE account_id = ? AND UPPER(ticker) = UPPER(?)")
       .get(account_id, ticker) as { units: number } | undefined;
     if (after && (!before || after.units > before.units + 1e-6)) reconciled += 1;
+    // Units are now synced to the statement, so any DRP estimate is cleared.
+    db.prepare(
+      "UPDATE holdings SET drp_units_pending = 0 WHERE account_id = ? AND UPPER(ticker) = UPPER(?)"
+    ).run(account_id, ticker);
   }
 
   // Record the account's cash balance if one was supplied.

@@ -29,6 +29,7 @@ interface Holding {
   gain_loss_percent: number | null;
   annual_income: number | null;
   display_name: string;
+  drp_units_pending: number | null;
 }
 
 interface Account {
@@ -521,6 +522,22 @@ export default function HoldingsPage() {
 
   async function handleDelete(id: string) {
     await fetch(`/api/holdings?id=${id}`, { method: "DELETE" });
+    await loadHoldings();
+  }
+
+  async function handleApplyDrp(h: Holding) {
+    const est = (h.drp_units_pending || 0).toFixed(4);
+    if (
+      !confirm(
+        `Add the estimated ${est} reinvested (DRP) units to ${h.ticker}?\n\nThis is an estimate from distribution history — for an exact figure, re-import your latest statement instead.`
+      )
+    )
+      return;
+    await fetch("/api/holdings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: h.id, apply_drp: true }),
+    });
     await loadHoldings();
   }
 
@@ -1101,6 +1118,16 @@ export default function HoldingsPage() {
                   <td className="px-4 py-3 font-data text-sm font-medium text-gbx-charcoal whitespace-nowrap">
                     <KindDot ticker={h.ticker} />
                     {h.ticker}
+                    {(h.drp_units_pending || 0) > 0.0001 && (
+                      <button
+                        onClick={() => handleApplyDrp(h)}
+                        title={`Estimated ${(h.drp_units_pending || 0).toFixed(4)} units reinvested via DRP since your last statement. Tap to add them (or re-import for the exact figure).`}
+                        className="ml-2 align-middle text-[9px] uppercase tracking-[0.1em] font-body font-medium px-1.5 py-0.5 border transition-colors hover:opacity-70"
+                        style={{ color: "#C68A2E", borderColor: "#C68A2E80" }}
+                      >
+                        DRP +{(h.drp_units_pending || 0).toFixed(2)}
+                      </button>
+                    )}
                   </td>
                   <td className="hidden xl:table-cell px-4 py-3 text-sm font-body text-gbx-charcoal max-w-[200px] truncate">
                     {h.display_name}

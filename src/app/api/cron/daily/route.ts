@@ -4,6 +4,7 @@ import {
   refreshAllPrices,
   recordSnapshot,
   syncDividends,
+  detectDrpDrift,
 } from "@/lib/portfolio";
 import { refreshAllSuper } from "@/lib/super";
 
@@ -35,6 +36,14 @@ export async function POST(request: NextRequest) {
     dividends = { recorded: 0, details: ["dividend sync failed"] };
   }
 
+  // Flag DRP drift (distributions reinvested at the broker as new units).
+  let drp: { flagged: number; details: string[] };
+  try {
+    drp = await detectDrpDrift(db);
+  } catch {
+    drp = { flagged: 0, details: ["drp detection failed"] };
+  }
+
   const totals = recordSnapshot(db);
 
   return NextResponse.json({
@@ -42,6 +51,7 @@ export async function POST(request: NextRequest) {
     prices,
     super: { accounts: superResults.length },
     dividends,
+    drp,
     snapshot: {
       totalNetWorth: totals.totalNetWorth,
       holdingsValue: totals.holdingsTotal,

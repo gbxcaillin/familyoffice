@@ -116,13 +116,41 @@ export async function POST(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   const body = await request.json();
-  const { id, units, cost_basis, notes, owner, pct_p1 } = body;
+  const { id, units, cost_basis, notes, owner, pct_p1, apply_drp } = body;
 
   if (!id) {
     return NextResponse.json({ error: "ID required" }, { status: 400 });
   }
 
   const db = getDb();
+
+  // Apply the estimated DRP drift: fold the pending reinvested units into the
+  // holding at the current price (weighted-average cost) and clear the flag.
+  if (apply_drp) {
+    const row = db
+      .prepare(
+        `SELECT h.units, h.cost_basis, h.drp_units_pending, pc.price
+         FROM holdings h LEFT JOIN price_cache pc ON UPPER(h.ticker) = UPPER(pc.ticker)
+         WHERE h.id = ?`
+      )
+      .get(id) as
+      | { units: number; cost_basis: number; drp_units_pending: number | null; price: number | null }
+      | undefined;
+    if (!row) return NextResponse.json({ error: "Holding not found" }, { status: 404 });
+    const add = row.drp_units_pending || 0;
+    if (add <= 0) {
+      return NextResponse.json({ error: "No DRP drift to apply" }, { status: 400 });
+    }
+    const price = row.price || row.cost_basis || 0;
+    const newUnits = row.units + add;
+    const newCost =
+      newUnits > 0 ? (row.units * row.cost_basis + add * price) / newUnits : row.cost_basis;
+    db.prepare(
+      `UPDATE holdings SET units = ?, cost_basis = ?, drp_units_pending = 0,
+         drp_checked_at = ?, updated_at = datetime('now') WHERE id = ?`
+    ).run(newUnits, newCost, new Date().toISOString().slice(0, 10), id);
+    return NextResponse.json({ ok: true, applied: add, units: newUnits });
+  }
   // Update only the fields that were supplied, so a single-field change
   // (e.g. just the owner) doesn't wipe the rest.
   const sets: string[] = [];
@@ -130,6 +158,8 @@ export async function PUT(request: NextRequest) {
   if (units !== undefined) {
     sets.push("units = ?");
     vals.push(parseFloat(units));
+    // Manually setting units supersedes any estimated DRP drift.
+    sets.push("drp_units_pending = 0");
   }
   if (cost_basis !== undefined) {
     sets.push("cost_basis = ?");
