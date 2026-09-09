@@ -282,6 +282,17 @@ function initSchema(db: Database.Database) {
     // ignore
   }
 
+  // Seed the household Freedom Number once: a fixed $2.5M target, counting home
+  // equity. Only inserted if no 'fire' setting exists yet, so it never overrides
+  // a choice later saved from the app.
+  try {
+    db.prepare(
+      "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('fire', ?)"
+    ).run(JSON.stringify({ targetOverride: 2500000, includeHome: true }));
+  } catch {
+    // app_settings may not exist on a partially-migrated schema; ignore.
+  }
+
   const catCount = db.prepare("SELECT COUNT(*) as count FROM categories").get() as { count: number };
   if (catCount.count === 0) {
     const insert = db.prepare("INSERT INTO categories (id, name, type, color) VALUES (?, ?, ?, ?)");

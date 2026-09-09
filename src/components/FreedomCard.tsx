@@ -9,6 +9,7 @@ interface Freedom {
     swr: number;
     realReturn: number;
     annualSpend: number | null;
+    targetOverride: number | null;
     includeHome: boolean;
     currentAge: number | null;
     retireAge: number;
@@ -21,6 +22,8 @@ interface Freedom {
   annualIncome: number | null;
   annualSavings: number | null;
   fireTarget: number | null;
+  targetFixed: boolean;
+  sustainableSpend: number | null;
   progressPct: number | null;
   yearsToFire: number | null;
   fireDate: string | null;
@@ -64,6 +67,7 @@ export default function FreedomCard() {
     swr: "",
     realReturn: "",
     annualSpend: "",
+    targetOverride: "",
     includeHome: false,
     currentAge: "",
     retireAge: "",
@@ -78,6 +82,7 @@ export default function FreedomCard() {
           swr: String(d.settings.swr),
           realReturn: String(d.settings.realReturn),
           annualSpend: d.settings.annualSpend != null ? String(d.settings.annualSpend) : "",
+          targetOverride: d.settings.targetOverride != null ? String(d.settings.targetOverride) : "",
           includeHome: d.settings.includeHome,
           currentAge: d.settings.currentAge != null ? String(d.settings.currentAge) : "",
           retireAge: String(d.settings.retireAge),
@@ -99,6 +104,7 @@ export default function FreedomCard() {
         swr: form.swr,
         realReturn: form.realReturn,
         annualSpend: form.annualSpend,
+        targetOverride: form.targetOverride,
         includeHome: form.includeHome,
         currentAge: form.currentAge,
         retireAge: form.retireAge,
@@ -129,8 +135,11 @@ export default function FreedomCard() {
             Freedom Number
           </h2>
           <p className="text-[11px] text-white/40 font-body mt-1">
-            Financial independence at {data.settings.swr}% withdrawal ·{" "}
-            {data.settings.realReturn}% real return
+            {data.targetFixed && data.fireTarget != null
+              ? `Fixed target ${fmt0(data.fireTarget)}`
+              : `Independence at ${data.settings.swr}% withdrawal`}{" "}
+            · {data.settings.realReturn}% real return
+            {data.settings.includeHome ? " · incl. property" : ""}
           </p>
         </div>
         <button
@@ -144,6 +153,10 @@ export default function FreedomCard() {
       {editing && (
         <div className="bg-white/5 border border-white/10 p-4 mb-5 space-y-3">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div>
+              <label className={`${labelClass} text-white/50`}>Fixed target $ (blank = from spend)</label>
+              <input className={inputClass} value={form.targetOverride} onChange={(e) => setForm({ ...form, targetOverride: e.target.value })} placeholder="e.g. 2500000" />
+            </div>
             <div>
               <label className={`${labelClass} text-white/50`}>Withdrawal rate %</label>
               <input className={inputClass} value={form.swr} onChange={(e) => setForm({ ...form, swr: e.target.value })} placeholder="4" />
@@ -258,14 +271,17 @@ export default function FreedomCard() {
 
           {/* Footnote: inputs */}
           <p className="text-[11px] text-white/30 font-body mt-4">
-            Spend {data.annualSpend != null ? fmt0(data.annualSpend) : "—"}/yr
-            {data.spendDerived ? " (auto)" : " (set)"}
+            {data.targetFixed && data.sustainableSpend != null
+              ? `Supports ~${fmt0(data.sustainableSpend)}/yr at ${data.settings.swr}%`
+              : `Spend ${data.annualSpend != null ? fmt0(data.annualSpend) : "—"}/yr${data.spendDerived ? " (auto)" : " (set)"}`}
             {data.annualSavings != null
               ? ` · saving ${fmt0(data.annualSavings)}/yr`
               : " · savings unknown (add income)"}
-            {!data.settings.includeHome && data.homeEquity !== 0
-              ? " · home equity excluded"
-              : ""}
+            {data.settings.includeHome
+              ? " · incl. property"
+              : data.homeEquity !== 0
+                ? " · home equity excluded"
+                : ""}
           </p>
         </>
       )}

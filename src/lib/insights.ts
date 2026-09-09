@@ -33,6 +33,7 @@ export interface FireSettings {
   swr: number; // safe withdrawal rate %, e.g. 4 → 25× spend target
   realReturn: number; // expected real (after-inflation) return %, e.g. 5
   annualSpend: number | null; // manual override; null → derived from transactions
+  targetOverride: number | null; // fixed $ FIRE target; overrides the spend×SWR target
   includeHome: boolean; // count home equity toward the invested figure?
   currentAge: number | null; // enables Coast FIRE when set
   retireAge: number; // preservation / target retirement age, e.g. 60
@@ -42,6 +43,7 @@ export const DEFAULT_FIRE: FireSettings = {
   swr: 4,
   realReturn: 5,
   annualSpend: null,
+  targetOverride: null,
   includeHome: false,
   currentAge: null,
   retireAge: 60,
@@ -107,6 +109,8 @@ export interface FreedomResult {
   annualIncome: number | null;
   annualSavings: number | null;
   fireTarget: number | null;
+  targetFixed: boolean;
+  sustainableSpend: number | null;
   progressPct: number | null;
   yearsToFire: number | null;
   fireDate: string | null;
@@ -141,6 +145,8 @@ export function computeFreedom(db: Database.Database): FreedomResult {
     annualIncome,
     annualSavings,
     fireTarget: null,
+    targetFixed: false,
+    sustainableSpend: null,
     progressPct: null,
     yearsToFire: null,
     fireDate: null,
@@ -150,11 +156,20 @@ export function computeFreedom(db: Database.Database): FreedomResult {
     coastProgressPct: null,
   };
 
-  if (!annualSpend || annualSpend <= 0) {
-    return { ...base, reason: "no-spend" };
+  // A fixed dollar target (if set) wins; otherwise derive it from spend × 1/SWR.
+  const targetFixed = s.targetOverride != null && s.targetOverride > 0;
+  const fireTarget = targetFixed
+    ? (s.targetOverride as number)
+    : annualSpend && annualSpend > 0
+      ? annualSpend * (100 / s.swr)
+      : null;
+
+  if (fireTarget == null) {
+    return { ...base, reason: "no-target" };
   }
 
-  const fireTarget = annualSpend * (100 / s.swr);
+  // What that pot sustainably supports per year at the withdrawal rate.
+  const sustainableSpend = (fireTarget * s.swr) / 100;
   const progressPct = fireTarget > 0 ? (investedNow / fireTarget) * 100 : null;
   const r = s.realReturn / 100;
   const save = annualSavings != null && annualSavings > 0 ? annualSavings : 0;
@@ -182,6 +197,8 @@ export function computeFreedom(db: Database.Database): FreedomResult {
     ...base,
     configured: true,
     fireTarget,
+    targetFixed,
+    sustainableSpend,
     progressPct,
     yearsToFire,
     fireDate,

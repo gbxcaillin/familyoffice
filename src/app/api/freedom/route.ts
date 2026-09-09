@@ -33,6 +33,7 @@ export async function PUT(request: NextRequest) {
     swr: Math.min(10, Math.max(1, numOr(body.swr, cur.swr))),
     realReturn: Math.min(15, Math.max(0, numOr(body.realReturn, cur.realReturn))),
     annualSpend: numOrNull(body.annualSpend, cur.annualSpend),
+    targetOverride: numOrNull(body.targetOverride, cur.targetOverride),
     includeHome:
       typeof body.includeHome === "boolean" ? body.includeHome : cur.includeHome,
     currentAge: numOrNull(body.currentAge, cur.currentAge),
