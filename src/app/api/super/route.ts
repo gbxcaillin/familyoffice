@@ -68,18 +68,35 @@ export async function GET() {
         ? 0
         : periodsBetween(contribFrom, todayISO, cfg.pay_frequency);
 
+    // Only surface history from the current anchor onward. Points recorded
+    // before the last (re-)anchor belong to a different baseline and would
+    // show a deceptive dip on the sparkline.
+    const anchorDate = cfg.anchor_date ?? cfg.unit_price_date ?? "0000-00-00";
     const history = db
       .prepare(
         `SELECT date, unit_price, units, value FROM super_price_history
-         WHERE account_id = ? ORDER BY date ASC`
+         WHERE account_id = ? AND date >= ? ORDER BY date ASC`
       )
-      .all(cfg.account_id) as HistoryRow[];
+      .all(cfg.account_id, anchorDate) as HistoryRow[];
 
+    // Day change: the two most recent points, but guarded so a data
+    // discontinuity can't masquerade as a one-day move. A diversified super
+    // option effectively never moves more than a few percent in a day, so a
+    // large gap in time (a rebuild, a fund that hadn't repriced) OR an
+    // implausibly large percentage means the prior point is stale, not that
+    // the fund crashed — suppress the figure rather than show a false scare.
     let dayChangePct: number | null = null;
     if (history.length >= 2) {
-      const a = history[history.length - 2].unit_price;
-      const b = history[history.length - 1].unit_price;
-      if (a > 0) dayChangePct = ((b - a) / a) * 100;
+      const prev = history[history.length - 2];
+      const last = history[history.length - 1];
+      const gapDays =
+        (new Date(last.date + "T00:00:00Z").getTime() -
+          new Date(prev.date + "T00:00:00Z").getTime()) /
+        (24 * 60 * 60 * 1000);
+      if (prev.unit_price > 0 && gapDays <= 5) {
+        const pct = ((last.unit_price - prev.unit_price) / prev.unit_price) * 100;
+        if (Math.abs(pct) <= 8) dayChangePct = pct;
+      }
     }
 
     const value = (cfg.units ?? 0) * (cfg.unit_price ?? 0);

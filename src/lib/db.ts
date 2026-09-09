@@ -167,6 +167,14 @@ function initSchema(db: Database.Database) {
       joint_total REAL NOT NULL DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    -- Household-level key/value settings (shared, not per-user): e.g. the
+    -- Freedom Number (FIRE) assumptions. Value is a JSON string.
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // Loan metadata columns, added after the original release.
@@ -272,6 +280,17 @@ function initSchema(db: Database.Database) {
     );
   } catch {
     // ignore
+  }
+
+  // Seed the household Freedom Number once: a fixed $2.5M target, counting home
+  // equity. Only inserted if no 'fire' setting exists yet, so it never overrides
+  // a choice later saved from the app.
+  try {
+    db.prepare(
+      "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('fire', ?)"
+    ).run(JSON.stringify({ targetOverride: 2500000, includeHome: true }));
+  } catch {
+    // app_settings may not exist on a partially-migrated schema; ignore.
   }
 
   const catCount = db.prepare("SELECT COUNT(*) as count FROM categories").get() as { count: number };

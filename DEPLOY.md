@@ -89,14 +89,25 @@ against the server itself dying.
 
 ## Updating the app
 
+The server tracks the `main` branch — releases are merged there via pull
+request. If this server was first cloned on another branch, switch it once:
+
+```bash
+cd ~/familyoffice
+git checkout main        # one-time, if not already on main
+```
+
+Then each update is:
+
 ```bash
 cd ~/familyoffice
 git pull
 docker compose up -d --build
 ```
 
-Data is untouched by updates: the database and uploads live in `data/` and
-`uploads/` on the host, mounted into the container.
+Data is untouched by updates: the database and uploaded documents both live
+under `data/` on the host (`data/familyoffice.db` and `data/uploads/`),
+mounted into the container.
 
 ## Moving your existing data up
 
@@ -104,7 +115,7 @@ The database you've built locally can be copied straight to the server:
 
 ```bash
 scp data/familyoffice.db root@YOUR_SERVER_IP:~/familyoffice/data/
-scp -r uploads/* root@YOUR_SERVER_IP:~/familyoffice/uploads/  # if any
+scp -r data/uploads/* root@YOUR_SERVER_IP:~/familyoffice/data/uploads/  # if any
 docker compose restart app
 ```
 
