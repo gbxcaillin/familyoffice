@@ -27,6 +27,8 @@ export interface SuperConfig {
   price_source: PriceSource;
   unit_price: number | null;
   unit_price_date: string | null;
+  anchor_price: number | null;
+  anchor_date: string | null;
   units: number | null;
   fee_annual: number | null;
   basket: string | null; // JSON BasketLeg[]
@@ -135,7 +137,11 @@ export function computeProxyUnitPrice(
   pricesNow: Record<string, number>,
   today: string
 ): number | null {
-  const anchor = cfg.unit_price ?? 1;
+  // Use the FIXED anchor (set at setup / re-anchor), never the live unit_price
+  // that refresh overwrites — otherwise the basket factor compounds on every
+  // refresh and the value drifts each time it's recomputed.
+  const anchor = cfg.anchor_price ?? cfg.unit_price ?? 1;
+  const anchorDate = cfg.anchor_date ?? cfg.unit_price_date;
   const legs = parseBasket(cfg);
   const base = parseBasketBase(cfg);
   if (legs.length === 0) return cfg.unit_price ?? null;
@@ -155,7 +161,7 @@ export function computeProxyUnitPrice(
   factor = factor / usedWeight;
 
   const fee = cfg.fee_annual ?? 0.001;
-  const feeFactor = Math.pow(1 - fee, yearsBetween(cfg.unit_price_date, today));
+  const feeFactor = Math.pow(1 - fee, yearsBetween(anchorDate, today));
   return anchor * factor * feeFactor;
 }
 

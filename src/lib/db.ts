@@ -253,6 +253,27 @@ function initSchema(db: Database.Database) {
     );
   `);
 
+  // Fixed anchor for the proxy price. The live unit_price is overwritten on
+  // every refresh, so it can't double as the anchor (that compounded the basket
+  // factor and drifted the value down each refresh). anchor_price/anchor_date
+  // are set only at setup / re-anchor and never touched by refresh.
+  for (const col of ["anchor_price REAL", "anchor_date TEXT"]) {
+    try {
+      db.exec(`ALTER TABLE super_config ADD COLUMN ${col}`);
+    } catch {
+      // Column already exists.
+    }
+  }
+  // Backfill the anchor from the last known unit price for existing accounts.
+  // (Drifted accounts should be re-anchored via Edit → enter balance.)
+  try {
+    db.exec(
+      "UPDATE super_config SET anchor_price = COALESCE(anchor_price, unit_price), anchor_date = COALESCE(anchor_date, unit_price_date) WHERE anchor_price IS NULL"
+    );
+  } catch {
+    // ignore
+  }
+
   const catCount = db.prepare("SELECT COUNT(*) as count FROM categories").get() as { count: number };
   if (catCount.count === 0) {
     const insert = db.prepare("INSERT INTO categories (id, name, type, color) VALUES (?, ?, ?, ?)");

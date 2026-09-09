@@ -184,15 +184,18 @@ export async function POST(request: NextRequest) {
   db.prepare(
     `INSERT INTO super_config
        (account_id, fund_name, option_name, price_source, unit_price, unit_price_date,
+        anchor_price, anchor_date,
         units, fee_annual, basket, basket_base, feed_url, feed_path,
         contrib_method, salary, sg_rate, extra_per_period, pay_frequency, contrib_tax,
         last_contrib_date)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     fund_name || null,
     option_name || null,
     price_source,
+    anchorPrice,
+    today,
     anchorPrice,
     today,
     units,
@@ -305,9 +308,15 @@ export async function PUT(request: NextRequest) {
     }
   }
 
+  // Re-anchoring resets the FIXED proxy anchor to the entered price/date so the
+  // basket factor is measured from here; otherwise keep the existing anchor.
+  const anchorPriceOut = reanchor ? unitPrice : (cfg.anchor_price ?? unitPrice);
+  const anchorDateOut = reanchor ? today : (cfg.anchor_date ?? unitPriceDate);
+
   db.prepare(
     `UPDATE super_config SET
        fund_name = ?, option_name = ?, price_source = ?, unit_price = ?, unit_price_date = ?,
+       anchor_price = ?, anchor_date = ?,
        units = ?, fee_annual = ?, basket = ?, basket_base = ?, feed_url = ?, feed_path = ?,
        contrib_method = ?, salary = ?, sg_rate = ?, extra_per_period = ?, pay_frequency = ?,
        contrib_tax = ?, last_contrib_date = ?, updated_at = datetime('now')
@@ -318,6 +327,8 @@ export async function PUT(request: NextRequest) {
     priceSource,
     unitPrice,
     unitPriceDate,
+    anchorPriceOut,
+    anchorDateOut,
     units,
     num(body.fee_annual, cfg.fee_annual),
     legs.length > 0 ? JSON.stringify(legs) : null,
