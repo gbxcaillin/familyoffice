@@ -266,7 +266,20 @@ export interface FreedomResult {
   coastNumber: number | null;
   coastReached: boolean | null;
   coastProgressPct: number | null;
+  // Bridge to preservation age (retiring before super unlocks)
+  bridge: BridgeInfo;
 }
+
+export interface BridgeInfo {
+  needed: boolean; // retiring before the preservation age?
+  covered: boolean | null; // does outside-super cover the gap? null if unknown
+  shortfallAge: number | null; // age outside-super runs out, if it does
+  outsideAtRetire: number | null; // outside-super balance at the retirement age
+  gapYears: number;
+  preservationAge: number;
+}
+
+const PRESERVATION_AGE = 60;
 
 export function computeFreedom(db: Database.Database): FreedomResult {
   const s = getFireSettings(db);
@@ -379,6 +392,14 @@ export function computeFreedom(db: Database.Database): FreedomResult {
     coastNumber: null,
     coastReached: null,
     coastProgressPct: null,
+    bridge: {
+      needed: false,
+      covered: null,
+      shortfallAge: null,
+      outsideAtRetire: null,
+      gapYears: 0,
+      preservationAge: PRESERVATION_AGE,
+    },
   };
 
   // A fixed dollar target (if set) wins; otherwise derive it from spend × 1/SWR.
@@ -418,6 +439,31 @@ export function computeFreedom(db: Database.Database): FreedomResult {
     coastProgressPct = coastNumber > 0 ? (investedNow / coastNumber) * 100 : null;
   }
 
+  // Bridge: retiring before the preservation age means outside-super has to fund
+  // the gap years (super is locked). Lightweight two-phase check in real terms.
+  const bridge = { ...base.bridge };
+  const superNow = totals.byType.super || 0;
+  if (effectiveAge != null && s.retireAge > effectiveAge) {
+    if (s.retireAge >= PRESERVATION_AGE) {
+      bridge.needed = false;
+      bridge.covered = true;
+    } else {
+      bridge.needed = true;
+      bridge.gapYears = PRESERVATION_AGE - Math.round(s.retireAge);
+      const disc = discretionarySavings != null && discretionarySavings > 0 ? discretionarySavings : 0;
+      let out = Math.max(0, netWorth - homeEquity - superNow); // outside super now
+      for (let a = Math.floor(effectiveAge); a < s.retireAge; a++) out = out * (1 + r) + disc;
+      bridge.outsideAtRetire = out;
+      let shortfallAge: number | null = null;
+      for (let a = Math.floor(s.retireAge); a < PRESERVATION_AGE; a++) {
+        out = out * (1 + r) - (annualSpend || 0);
+        if (out <= 0) { shortfallAge = a + 1; break; }
+      }
+      bridge.shortfallAge = shortfallAge;
+      bridge.covered = shortfallAge == null;
+    }
+  }
+
   return {
     ...base,
     configured: true,
@@ -431,6 +477,7 @@ export function computeFreedom(db: Database.Database): FreedomResult {
     coastNumber,
     coastReached,
     coastProgressPct,
+    bridge,
   };
 }
 
