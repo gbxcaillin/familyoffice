@@ -104,7 +104,8 @@ export default function FreedomCard() {
           swr: String(d.settings.swr),
           realReturn: String(d.settings.realReturn),
           inflation: String(d.settings.inflation),
-          annualSpend: d.settings.annualSpend != null ? String(d.settings.annualSpend) : "",
+          // Prefill only if spend is a set value; blank means auto-derived.
+          annualSpend: !d.spendDerived && d.annualSpend != null ? String(d.annualSpend) : "",
           targetOverride: d.settings.targetOverride != null ? String(d.settings.targetOverride) : "",
           includeHome: d.settings.includeHome,
           birthP1: d.settings.birthP1 || "",
@@ -125,6 +126,13 @@ export default function FreedomCard() {
 
   async function save() {
     setSaving(true);
+    // Spend is stored on the Profile (the source of truth), so write it there
+    // first, then recompute the plan.
+    await fetch("/api/profile", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ annualSpend: form.annualSpend }),
+    });
     const res = await fetch("/api/freedom", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -132,7 +140,6 @@ export default function FreedomCard() {
         swr: form.swr,
         realReturn: form.realReturn,
         inflation: form.inflation,
-        annualSpend: form.annualSpend,
         targetOverride: form.targetOverride,
         includeHome: form.includeHome,
         birthP1: form.birthP1,
@@ -218,6 +225,23 @@ export default function FreedomCard() {
               <input className={inputClass} value={form.inflation} onChange={(e) => setForm({ ...form, inflation: e.target.value })} placeholder="2.5" />
             </div>
             <div>
+              <label className={`${labelClass} text-white/50 flex items-center gap-1.5`}>
+                Annual spending $
+                <InfoTip label="Annual spending" tone="dark">
+                  <p className="mb-2">
+                    Your household&apos;s yearly living costs in today&apos;s dollars. This drives the
+                    savings estimate and, when no fixed target is set, the FIRE target
+                    (spend ÷ withdrawal rate).
+                  </p>
+                  <p>
+                    Set it here while the Spending tab catches up with real transactions. Leave blank
+                    to auto-estimate from your logged spending instead.
+                  </p>
+                </InfoTip>
+              </label>
+              <input className={inputClass} value={form.annualSpend} onChange={(e) => setForm({ ...form, annualSpend: e.target.value })} placeholder="blank = auto from spending" />
+            </div>
+            <div>
               <label className={`${labelClass} text-white/50`}>{users.person1} birth month</label>
               <input type="month" className={inputClass} value={form.birthP1} onChange={(e) => setForm({ ...form, birthP1: e.target.value })} />
             </div>
@@ -237,7 +261,7 @@ export default function FreedomCard() {
             </div>
           </div>
           <p className="text-[11px] text-white/40 font-body">
-            Ages, income, spend &amp; risk level live in <strong className="text-white/70">Profile</strong>.
+            Ages, income &amp; risk level live in <strong className="text-white/70">Profile</strong>.
             Full drawdown/return scenario testing is on the <strong className="text-white/70">FIRE</strong> tab.
           </p>
           <button onClick={save} disabled={saving} className="bg-gbx-teal text-white px-4 py-2 text-[11px] uppercase tracking-[0.15em] font-body font-medium hover:bg-gbx-deep-teal transition-colors disabled:opacity-50">
