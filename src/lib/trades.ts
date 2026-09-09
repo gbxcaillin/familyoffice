@@ -109,7 +109,10 @@ export function syncHoldingFromTrades(
         avgCost
       );
     }
-  } else if (existing) {
-    db.prepare("DELETE FROM holdings WHERE id = ?").run(existing.id);
   }
+  // If the trades net to zero we do NOT delete the holding. A trade import is
+  // often partial (only some history, or a cash report), and silently wiping a
+  // position that was established from a holdings statement is destructive and
+  // hard to notice. Leave the existing units untouched; a genuinely closed
+  // position can be removed manually or corrected by a holdings-statement import.
 }
