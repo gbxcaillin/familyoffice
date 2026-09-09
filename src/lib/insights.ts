@@ -106,6 +106,47 @@ export const DEFAULT_PROFILE: Profile = {
   annualSpend: null,
 };
 
+// Aggregate mortgage picture across all loan accounts, for FIRE projections.
+export interface MortgageSummary {
+  hasMortgage: boolean;
+  propertyValue: number; // total property assets
+  loanBalance: number; // positive amount owing
+  rate: number; // balance-weighted annual %
+  monthlyRepayment: number;
+  annualRepayment: number;
+}
+
+export function getMortgageSummary(db: Database.Database): MortgageSummary {
+  const totals = computeNetWorth(db);
+  const propertyValue = Math.max(0, totals.byType.property || 0);
+  const loans = db
+    .prepare(
+      `SELECT a.interest_rate as rate, a.repayment_amount as rep,
+        (SELECT b.balance FROM balances b WHERE b.account_id = a.id ORDER BY b.date DESC LIMIT 1) as bal
+       FROM accounts a WHERE a.type = 'loan'`
+    )
+    .all() as { rate: number | null; rep: number | null; bal: number | null }[];
+
+  let loanBalance = 0;
+  let monthlyRepayment = 0;
+  let rateWeighted = 0;
+  for (const l of loans) {
+    const owing = Math.abs(l.bal || 0);
+    loanBalance += owing;
+    monthlyRepayment += l.rep || 0;
+    rateWeighted += owing * (l.rate || 0);
+  }
+  const rate = loanBalance > 0 ? rateWeighted / loanBalance : 0;
+  return {
+    hasMortgage: loanBalance > 0,
+    propertyValue,
+    loanBalance,
+    rate,
+    monthlyRepayment,
+    annualRepayment: monthlyRepayment * 12,
+  };
+}
+
 export function getProfile(db: Database.Database): Profile {
   const raw = getSetting(db, "profile", {} as Partial<Profile>);
   return {
