@@ -8,8 +8,10 @@ const TAB_DEFS: Record<string, { name: string; href: string }> = {
   accounts: { name: "Accounts", href: "/accounts" },
   holdings: { name: "Holdings", href: "/holdings" },
   super: { name: "Super", href: "/super" },
+  fire: { name: "FIRE", href: "/fire" },
   spending: { name: "Spending", href: "/spending" },
   import: { name: "Import & Docs", href: "/import" },
+  profile: { name: "Profile", href: "/profile" },
 };
 
 const DEFAULT_TAB_ORDER = [
@@ -17,8 +19,10 @@ const DEFAULT_TAB_ORDER = [
   "accounts",
   "holdings",
   "super",
+  "fire",
   "spending",
   "import",
+  "profile",
 ];
 
 export default function DashboardShell({
