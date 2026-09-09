@@ -31,7 +31,8 @@ export function setSetting(db: Database.Database, key: string, value: unknown): 
 
 export interface FireSettings {
   swr: number; // safe withdrawal rate %, e.g. 4 → 25× spend target
-  realReturn: number; // expected real (after-inflation) return %, e.g. 5
+  realReturn: number; // NOMINAL return % fallback (name kept for storage compat)
+  inflation: number; // assumed inflation %, to convert nominal → real
   annualSpend: number | null; // manual override; null → derived from transactions
   targetOverride: number | null; // fixed $ FIRE target; overrides the spend×SWR target
   includeHome: boolean; // count home equity toward the invested figure?
@@ -43,7 +44,8 @@ export interface FireSettings {
 
 export const DEFAULT_FIRE: FireSettings = {
   swr: 4,
-  realReturn: 5,
+  realReturn: 7.5, // nominal fallback
+  inflation: 2.5,
   annualSpend: null,
   targetOverride: null,
   includeHome: false,
@@ -52,6 +54,11 @@ export const DEFAULT_FIRE: FireSettings = {
   birthP2: null,
   retireAge: 60,
 };
+
+// Convert a nominal return to a real (after-inflation) return, both in %.
+export function realFromNominal(nominalPct: number, inflationPct: number): number {
+  return ((1 + nominalPct / 100) / (1 + inflationPct / 100) - 1) * 100;
+}
 
 // Fractional current age from a "YYYY-MM" birth month (assumes mid-month).
 function ageFromYearMonth(ym: string | null): number | null {
@@ -83,19 +90,19 @@ export interface Profile {
   annualSpend: number | null; // planned household spend, AUD/yr
 }
 
-// Risk level → expected real (after-inflation) return %. Rough long-run
+// Risk level → expected NOMINAL return % (before inflation). Rough long-run
 // planning figures for a diversified portfolio at each growth/defensive mix.
-export const RISK_LEVELS: { key: string; label: string; realReturn: number; blurb: string }[] = [
-  { key: "conservative", label: "Conservative", realReturn: 2.5, blurb: "~30% growth / 70% defensive" },
-  { key: "moderate", label: "Moderate", realReturn: 4.0, blurb: "~50/50 growth / defensive" },
-  { key: "balanced", label: "Balanced", realReturn: 5.0, blurb: "~70% growth / 30% defensive" },
-  { key: "growth", label: "Growth", realReturn: 6.0, blurb: "~85% growth" },
-  { key: "high_growth", label: "High growth", realReturn: 7.0, blurb: "~100% growth" },
+export const RISK_LEVELS: { key: string; label: string; nominalReturn: number; blurb: string }[] = [
+  { key: "conservative", label: "Conservative", nominalReturn: 5.0, blurb: "~30% growth / 70% defensive" },
+  { key: "moderate", label: "Moderate", nominalReturn: 6.5, blurb: "~50/50 growth / defensive" },
+  { key: "balanced", label: "Balanced", nominalReturn: 7.5, blurb: "~70% growth / 30% defensive" },
+  { key: "growth", label: "Growth", nominalReturn: 8.5, blurb: "~85% growth" },
+  { key: "high_growth", label: "High growth", nominalReturn: 9.5, blurb: "~100% growth" },
 ];
 
 export function riskToReturn(level: string | null): number | null {
   if (!level) return null;
-  return RISK_LEVELS.find((r) => r.key === level)?.realReturn ?? null;
+  return RISK_LEVELS.find((r) => r.key === level)?.nominalReturn ?? null;
 }
 
 export const DEFAULT_PROFILE: Profile = {
@@ -222,7 +229,9 @@ export interface FreedomResult {
   ageP1: number | null;
   ageP2: number | null;
   effectiveAge: number | null; // older partner; drives Coast + FIRE age
-  effectiveReturn: number; // real return % actually used (profile risk/desired → fallback)
+  effectiveReturn: number; // REAL return % actually used (nominal − inflation)
+  effectiveNominal: number; // the nominal return that real was derived from
+  inflation: number; // inflation % used for the conversion
   returnSource: "desired" | "risk" | "default";
   riskLevel: string | null;
   incomeFromProfile: boolean;
@@ -250,19 +259,23 @@ export function computeFreedom(db: Database.Database): FreedomResult {
   const derivedAges = [ageP1, ageP2].filter((a): a is number => a != null);
   const effectiveAge = derivedAges.length ? Math.max(...derivedAges) : s.currentAge;
 
-  // Expected real return: explicit desired return > risk-level mapping > default.
-  let effectiveReturn = s.realReturn;
+  // Expected return. The user enters a NOMINAL return (desired override, or the
+  // risk-level mapping, else the fallback); we convert to a REAL return using the
+  // inflation assumption, because the whole model runs in today's dollars.
+  let nominalReturn = s.realReturn; // stored fallback (nominal)
   let returnSource: "desired" | "risk" | "default" = "default";
   if (profile.desiredReturn != null && profile.desiredReturn > 0) {
-    effectiveReturn = profile.desiredReturn;
+    nominalReturn = profile.desiredReturn;
     returnSource = "desired";
   } else {
     const rr = riskToReturn(profile.riskLevel);
     if (rr != null) {
-      effectiveReturn = rr;
+      nominalReturn = rr;
       returnSource = "risk";
     }
   }
+  const inflation = s.inflation ?? 2.5;
+  const effectiveReturn = Math.round(realFromNominal(nominalReturn, inflation) * 100) / 100;
 
   // Spend: profile > FIRE override > transaction-derived.
   const derivedSpend = annualisedFlow(db, "expense");
@@ -304,6 +317,8 @@ export function computeFreedom(db: Database.Database): FreedomResult {
     ageP2,
     effectiveAge,
     effectiveReturn,
+    effectiveNominal: nominalReturn,
+    inflation,
     returnSource,
     riskLevel: profile.riskLevel,
     incomeFromProfile,

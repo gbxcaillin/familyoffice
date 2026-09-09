@@ -9,6 +9,7 @@ interface Freedom {
   settings: {
     swr: number;
     realReturn: number;
+    inflation: number;
     annualSpend: number | null;
     targetOverride: number | null;
     includeHome: boolean;
@@ -34,6 +35,8 @@ interface Freedom {
   ageP1: number | null;
   ageP2: number | null;
   effectiveReturn: number;
+  effectiveNominal: number;
+  inflation: number;
   returnSource: "desired" | "risk" | "default";
   coastNumber: number | null;
   coastReached: boolean | null;
@@ -74,6 +77,7 @@ export default function FreedomCard() {
   const [form, setForm] = useState({
     swr: "",
     realReturn: "",
+    inflation: "",
     annualSpend: "",
     targetOverride: "",
     includeHome: false,
@@ -90,6 +94,7 @@ export default function FreedomCard() {
         setForm({
           swr: String(d.settings.swr),
           realReturn: String(d.settings.realReturn),
+          inflation: String(d.settings.inflation),
           annualSpend: d.settings.annualSpend != null ? String(d.settings.annualSpend) : "",
           targetOverride: d.settings.targetOverride != null ? String(d.settings.targetOverride) : "",
           includeHome: d.settings.includeHome,
@@ -117,6 +122,7 @@ export default function FreedomCard() {
       body: JSON.stringify({
         swr: form.swr,
         realReturn: form.realReturn,
+        inflation: form.inflation,
         annualSpend: form.annualSpend,
         targetOverride: form.targetOverride,
         includeHome: form.includeHome,
@@ -161,8 +167,9 @@ export default function FreedomCard() {
                 can draw from for 30+ years without running out.
               </p>
               <p>
-                <strong>Real return</strong> is your expected growth after inflation — the engine
-                uses it to project how the pot (plus your saving) grows toward the target.
+                You enter a <strong>nominal</strong> return (e.g. 8%); the engine subtracts
+                inflation to get the <strong>real</strong> return it projects with, so everything
+                stays in today&apos;s dollars.
               </p>
             </InfoTip>
           </h2>
@@ -170,7 +177,7 @@ export default function FreedomCard() {
             {data.targetFixed && data.fireTarget != null
               ? `Fixed target ${fmt0(data.fireTarget)}`
               : `Independence at ${data.settings.swr}% withdrawal`}{" "}
-            · {data.effectiveReturn}% real return
+            · {data.effectiveReturn}% real ({data.effectiveNominal}% nominal − {data.inflation}% infl.)
             {data.settings.includeHome ? " · incl. property" : ""}
           </p>
         </div>
@@ -194,8 +201,12 @@ export default function FreedomCard() {
               <input className={inputClass} value={form.swr} onChange={(e) => setForm({ ...form, swr: e.target.value })} placeholder="4" />
             </div>
             <div>
-              <label className={`${labelClass} text-white/50`}>Real return %</label>
-              <input className={inputClass} value={form.realReturn} onChange={(e) => setForm({ ...form, realReturn: e.target.value })} placeholder="5" />
+              <label className={`${labelClass} text-white/50`}>Return % (nominal)</label>
+              <input className={inputClass} value={form.realReturn} onChange={(e) => setForm({ ...form, realReturn: e.target.value })} placeholder="7.5" />
+            </div>
+            <div>
+              <label className={`${labelClass} text-white/50`}>Inflation %</label>
+              <input className={inputClass} value={form.inflation} onChange={(e) => setForm({ ...form, inflation: e.target.value })} placeholder="2.5" />
             </div>
             <div>
               <label className={`${labelClass} text-white/50`}>Annual spend (blank = auto)</label>

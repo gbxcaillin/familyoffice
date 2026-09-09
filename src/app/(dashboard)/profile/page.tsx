@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 interface RiskLevel {
   key: string;
   label: string;
-  realReturn: number;
+  nominalReturn: number;
   blurb: string;
 }
 interface PersonProfile {
@@ -80,8 +80,8 @@ export default function ProfilePage() {
   }
 
   const selectedRisk = risks.find((r) => r.key === form.riskLevel);
-  const effectiveReturn =
-    form.desiredReturn !== "" ? parseFloat(form.desiredReturn) : selectedRisk?.realReturn;
+  const nominalReturn =
+    form.desiredReturn !== "" ? parseFloat(form.desiredReturn) : selectedRisk?.nominalReturn;
 
   if (loading) {
     return (
@@ -145,13 +145,13 @@ export default function ProfilePage() {
               <option value="">— Select —</option>
               {risks.map((r) => (
                 <option key={r.key} value={r.key}>
-                  {r.label} · ~{r.realReturn}% real ({r.blurb})
+                  {r.label} · ~{r.nominalReturn}% nominal ({r.blurb})
                 </option>
               ))}
             </select>
           </div>
           <div>
-            <label className={labelClass}>Desired return % (overrides risk)</label>
+            <label className={labelClass}>Desired return % — nominal (overrides risk)</label>
             <input
               type="number"
               step="0.1"
@@ -172,10 +172,10 @@ export default function ProfilePage() {
             />
           </div>
         </div>
-        {effectiveReturn != null && !isNaN(effectiveReturn) && (
+        {nominalReturn != null && !isNaN(nominalReturn) && (
           <p className="text-[12px] text-gbx-muted font-body">
-            Calculations will use an expected real return of{" "}
-            <span className="text-gbx-teal font-medium">{effectiveReturn}%</span> after inflation.
+            Calculations will use a <span className="text-gbx-teal font-medium">{nominalReturn}% nominal</span> return.
+            Inflation is set on the FIRE tab and subtracted to give the real return used in projections.
           </p>
         )}
       </div>
