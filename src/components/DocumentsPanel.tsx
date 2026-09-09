@@ -82,13 +82,18 @@ export default function DocumentsPanel({
     if (accountId) formData.append("account_id", accountId);
     if (notes) formData.append("notes", notes);
 
-    await fetch("/api/documents", { method: "POST", body: formData });
+    const res = await fetch("/api/documents", { method: "POST", body: formData });
+    setUploading(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      alert(`Upload failed: ${data.error || res.statusText}`);
+      return;
+    }
 
     setSelectedFile(null);
     setAccountId("");
     setNotes("");
     setShowForm(false);
-    setUploading(false);
     load();
   }
 

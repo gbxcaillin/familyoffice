@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readFile } from "fs/promises";
 import path from "path";
+import { uploadPath } from "@/lib/uploads";
 
 export async function GET(
   _request: NextRequest,
@@ -13,8 +14,7 @@ export async function GET(
   }
 
   try {
-    const filePath = path.join(process.cwd(), "uploads", filename);
-    const buffer = await readFile(filePath);
+    const buffer = await readFile(uploadPath(filename));
 
     const ext = path.extname(filename).toLowerCase();
     const mimeTypes: Record<string, string> = {

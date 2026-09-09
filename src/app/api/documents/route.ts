@@ -3,6 +3,7 @@ import getDb from "@/lib/db";
 import { randomUUID } from "crypto";
 import { writeFile, unlink } from "fs/promises";
 import path from "path";
+import { ensureUploadsDir, uploadPath } from "@/lib/uploads";
 
 export async function GET() {
   const db = getDb();
@@ -33,9 +34,16 @@ export async function POST(request: NextRequest) {
   const id = `doc_${randomUUID().slice(0, 8)}`;
   const ext = path.extname(file.name) || ".bin";
   const filename = `${id}${ext}`;
-  const uploadPath = path.join(process.cwd(), "uploads", filename);
 
-  await writeFile(uploadPath, buffer);
+  try {
+    await ensureUploadsDir();
+    await writeFile(uploadPath(filename), buffer);
+  } catch (e) {
+    return NextResponse.json(
+      { error: `Could not save file: ${e instanceof Error ? e.message : "write failed"}` },
+      { status: 500 }
+    );
+  }
 
   const db = getDb();
   db.prepare(
@@ -58,7 +66,7 @@ export async function DELETE(request: NextRequest) {
 
   if (doc) {
     try {
-      await unlink(path.join(process.cwd(), "uploads", doc.filename));
+      await unlink(uploadPath(doc.filename));
     } catch {}
   }
 
