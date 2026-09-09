@@ -523,7 +523,7 @@ export default function ScenarioLab() {
         <Slider label="Inflation" value={sc.inflation} min={0} max={8} step={0.1} onChange={(v) => set({ inflation: v })} suffix="%" />
         <Slider label="Withdrawal rate" value={sc.swr} min={2} max={8} step={0.1} onChange={(v) => set({ swr: v })} suffix="%" />
         <Slider label="Retirement age" value={sc.retireAge} min={Math.ceil(sc.currentAge)} max={75} step={1} onChange={(v) => set({ retireAge: v })} />
-        <Slider label="Annual saving (into investments)" value={sc.savings} min={0} max={250000} step={1000} onChange={(v) => set({ savings: v })} money />
+        <Slider label="Annual saving (after tax, incl. super)" value={sc.savings} min={0} max={400000} step={1000} onChange={(v) => set({ savings: v })} money />
         <Slider label="Living spend in retirement (excl. mortgage)" value={sc.spend} min={20000} max={300000} step={1000} onChange={(v) => set({ spend: v })} money />
         <Slider label="Extra contribution / yr" value={sc.extra} min={0} max={100000} step={500} onChange={(v) => set({ extra: v })} money />
         <Slider label="Plan to age" value={sc.longevity} min={80} max={105} step={1} onChange={(v) => set({ longevity: v })} />

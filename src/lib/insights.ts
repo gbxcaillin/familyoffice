@@ -80,7 +80,26 @@ export function getFireSettings(db: Database.Database): FireSettings {
 
 export interface PersonProfile {
   birth: string | null; // "YYYY-MM"
-  income: number | null; // gross annual, AUD
+  income: number | null; // gross annual salary, AUD (before tax; super is on top)
+  sgRate: number | null; // employer super contribution %, paid on top of salary
+}
+
+// Australian resident income tax for 2024-25+ (Stage 3 scale) plus the 2%
+// Medicare levy. A planning approximation — ignores offsets, HELP, levy
+// thresholds/surcharge. Returns annual tax payable on a gross salary.
+export function incomeTaxAU(gross: number): number {
+  let tax = 0;
+  if (gross > 190000) tax = 51638 + (gross - 190000) * 0.45;
+  else if (gross > 135000) tax = 31288 + (gross - 135000) * 0.37;
+  else if (gross > 45000) tax = 4288 + (gross - 45000) * 0.3;
+  else if (gross > 18200) tax = (gross - 18200) * 0.16;
+  const medicare = gross > 0 ? gross * 0.02 : 0;
+  return tax + medicare;
+}
+
+export function afterTaxAU(gross: number): number {
+  if (gross <= 0) return 0;
+  return gross - incomeTaxAU(gross);
 }
 export interface Profile {
   p1: PersonProfile;
@@ -106,12 +125,15 @@ export function riskToReturn(level: string | null): number | null {
 }
 
 export const DEFAULT_PROFILE: Profile = {
-  p1: { birth: null, income: null },
-  p2: { birth: null, income: null },
+  p1: { birth: null, income: null, sgRate: null },
+  p2: { birth: null, income: null, sgRate: null },
   riskLevel: null,
   desiredReturn: null,
   annualSpend: null,
 };
+
+export const DEFAULT_SG_RATE = 12; // % employer super guarantee (on top of salary)
+const SUPER_CONTRIB_TAX = 0.15; // 15% tax on concessional contributions
 
 // Aggregate mortgage picture across all loan accounts, for FIRE projections.
 export interface MortgageSummary {
@@ -217,8 +239,12 @@ export interface FreedomResult {
   investedNow: number;
   annualSpend: number | null;
   spendDerived: boolean;
-  annualIncome: number | null;
-  annualSavings: number | null;
+  annualIncome: number | null; // take-home (after tax)
+  annualSavings: number | null; // discretionary + net employer super
+  householdGross: number; // total gross salaries
+  householdNet: number; // total after-tax
+  superContribNet: number; // net employer super into super each year
+  discretionarySavings: number | null; // take-home − spend
   fireTarget: number | null;
   targetFixed: boolean;
   sustainableSpend: number | null;
@@ -289,12 +315,34 @@ export function computeFreedom(db: Database.Database): FreedomResult {
     !(profile.annualSpend != null && profile.annualSpend > 0) &&
     !(s.annualSpend != null && s.annualSpend > 0);
 
-  // Income: profile incomes (sum) > transaction-derived.
-  const profileIncome = (profile.p1.income || 0) + (profile.p2.income || 0);
-  const incomeFromProfile = profileIncome > 0;
-  const annualIncome = incomeFromProfile ? profileIncome : annualisedFlow(db, "income");
-  const annualSavings =
+  // Income → savings. Profile salaries are gross; convert to after-tax take-home
+  // and add employer super (SG) paid on TOP of salary, net of 15% contributions
+  // tax. Wealth built each year = (take-home − spend) discretionary PLUS net SG
+  // into super (both count toward net worth / the target).
+  const taxed = (p: PersonProfile) => {
+    const g = p.income || 0;
+    if (g <= 0) return { gross: 0, net: 0, superNet: 0 };
+    return {
+      gross: g,
+      net: afterTaxAU(g),
+      superNet: g * ((p.sgRate ?? DEFAULT_SG_RATE) / 100) * (1 - SUPER_CONTRIB_TAX),
+    };
+  };
+  const t1 = taxed(profile.p1);
+  const t2 = taxed(profile.p2);
+  const householdGross = t1.gross + t2.gross;
+  const householdNet = t1.net + t2.net;
+  const superContribNet = t1.superNet + t2.superNet;
+  const incomeFromProfile = householdGross > 0;
+
+  // Take-home income (profile after-tax, or transaction-derived credits).
+  const annualIncome = incomeFromProfile ? householdNet : annualisedFlow(db, "income");
+  const discretionarySavings =
     annualIncome != null && annualSpend != null ? annualIncome - annualSpend : null;
+  const annualSavings =
+    discretionarySavings != null
+      ? discretionarySavings + (incomeFromProfile ? superContribNet : 0)
+      : null;
 
   const base: FreedomResult = {
     configured: false,
@@ -306,6 +354,10 @@ export function computeFreedom(db: Database.Database): FreedomResult {
     spendDerived,
     annualIncome,
     annualSavings,
+    householdGross,
+    householdNet,
+    superContribNet,
+    discretionarySavings,
     fireTarget: null,
     targetFixed: false,
     sustainableSpend: null,

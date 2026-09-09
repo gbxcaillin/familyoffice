@@ -40,11 +40,15 @@ export async function PUT(request: NextRequest) {
     if (typeof v === "string" && YM.test(v)) return v;
     return null;
   };
-  const person = (input: unknown, curP: { birth: string | null; income: number | null }) => {
+  const person = (
+    input: unknown,
+    curP: { birth: string | null; income: number | null; sgRate: number | null }
+  ) => {
     const o = (input && typeof input === "object" ? input : {}) as Record<string, unknown>;
     return {
       birth: ym(o.birth, curP.birth),
       income: num(o.income, curP.income),
+      sgRate: num(o.sgRate, curP.sgRate),
     };
   };
 
