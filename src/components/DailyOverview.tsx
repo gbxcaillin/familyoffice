@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import InfoTip from "./InfoTip";
 
 interface HoldingMover {
   ticker: string;
@@ -9,6 +10,7 @@ interface HoldingMover {
   price: number;
   value: number;
   ret: number;
+  isCrypto: boolean;
 }
 interface EtfMover {
   ticker: string;
@@ -49,6 +51,24 @@ export default function DailyOverview() {
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [date, setDate] = useState(todayISO());
+  const [excludeCrypto, setExcludeCrypto] = useState(false);
+
+  // Remember the exclude-crypto choice per browser.
+  useEffect(() => {
+    try {
+      setExcludeCrypto(localStorage.getItem("overviewExcludeCrypto") === "1");
+    } catch {
+      // ignore
+    }
+  }, []);
+  function toggleCrypto(next: boolean) {
+    setExcludeCrypto(next);
+    try {
+      localStorage.setItem("overviewExcludeCrypto", next ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }
 
   const load = useCallback((d: string) => {
     setLoading(true);
@@ -63,14 +83,29 @@ export default function DailyOverview() {
     load(date);
   }, [date, load]);
 
-  const topHoldings = data?.holdings.slice(0, 5) ?? [];
+  const filteredHoldings = (data?.holdings ?? []).filter(
+    (h) => !excludeCrypto || !h.isCrypto
+  );
+  const topHoldings = filteredHoldings.slice(0, 5);
   const topEtfs = data?.etfs.slice(0, 5) ?? [];
+  const hasCrypto = (data?.holdings ?? []).some((h) => h.isCrypto);
 
   return (
     <div className="bg-white border border-gbx-border p-6">
       <div className="flex items-center justify-between gap-3 mb-4 flex-wrap">
-        <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal">
+        <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal flex items-center gap-1.5">
           Daily Overview
+          <InfoTip label="Daily Overview">
+            <p className="mb-2">
+              <strong>Your top movers</strong> are your five best-performing holdings for the chosen
+              day (one-day price change vs the previous trading day). Pick any past date with the
+              selector.
+            </p>
+            <p>
+              <strong>Top ETFs</strong> ranks a watchlist of major AU &amp; global ETFs by today&apos;s
+              move (live from Yahoo) — market ideas for context, not advice.
+            </p>
+          </InfoTip>
         </h2>
         <div className="flex items-center gap-2">
           <label className="text-[10px] uppercase tracking-[0.12em] text-gbx-muted font-body">
@@ -92,9 +127,21 @@ export default function DailyOverview() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* Our top holdings that day */}
           <div>
-            <p className="text-[10px] uppercase tracking-[0.15em] text-gbx-muted font-body mb-2">
-              Your top movers{data?.asOf ? ` · ${data.asOf}` : ""}
-            </p>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-[10px] uppercase tracking-[0.15em] text-gbx-muted font-body">
+                Your top movers{data?.asOf ? ` · ${data.asOf}` : ""}
+              </p>
+              {hasCrypto && (
+                <label className="flex items-center gap-1.5 text-[10px] text-gbx-muted font-body cursor-pointer whitespace-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={excludeCrypto}
+                    onChange={(e) => toggleCrypto(e.target.checked)}
+                  />
+                  Exclude crypto
+                </label>
+              )}
+            </div>
             {topHoldings.length === 0 ? (
               <p className="text-sm text-gbx-muted font-body">
                 No holding price moves for this day.

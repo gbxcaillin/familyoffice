@@ -6,6 +6,7 @@ interface PositionRow {
   ticker: string;
   units: number;
   name: string | null;
+  is_crypto: number;
 }
 
 // A watchlist of notable AU-listed and global ETFs. "Top ETFs on the market"
@@ -50,8 +51,10 @@ export async function GET(request: NextRequest) {
 
   const positions = db
     .prepare(
-      `SELECT UPPER(h.ticker) as ticker, SUM(h.units) as units, MAX(pc.name) as name
+      `SELECT UPPER(h.ticker) as ticker, SUM(h.units) as units, MAX(pc.name) as name,
+        MAX(CASE WHEN a.type = 'crypto' THEN 1 ELSE 0 END) as is_crypto
        FROM holdings h
+       JOIN accounts a ON h.account_id = a.id
        LEFT JOIN price_cache pc ON UPPER(h.ticker) = UPPER(pc.ticker)
        GROUP BY UPPER(h.ticker)
        HAVING SUM(h.units) > 0`
@@ -72,6 +75,7 @@ export async function GET(request: NextRequest) {
     price: number;
     value: number;
     ret: number;
+    isCrypto: boolean;
   }[] = [];
   let asOf: string | null = null;
 
@@ -94,6 +98,7 @@ export async function GET(request: NextRequest) {
         price: pair.close,
         value: p.units * pair.close,
         ret,
+        isCrypto: p.is_crypto === 1,
       });
       if (!asOf || pair.date > asOf) asOf = pair.date;
     }
