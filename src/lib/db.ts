@@ -167,6 +167,14 @@ function initSchema(db: Database.Database) {
       joint_total REAL NOT NULL DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    -- Household-level key/value settings (shared, not per-user): e.g. the
+    -- Freedom Number (FIRE) assumptions. Value is a JSON string.
+    CREATE TABLE IF NOT EXISTS app_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // Loan metadata columns, added after the original release.

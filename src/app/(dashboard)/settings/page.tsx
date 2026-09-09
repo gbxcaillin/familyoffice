@@ -22,8 +22,12 @@ const LABELS: Record<string, Record<string, string>> = {
     import: "Import & Docs",
   },
   dashboardOrder: {
+    freedom: "Freedom Number (FIRE)",
+    watchdog: "Anomaly watchdog",
     stats: "Net worth cards",
+    overview: "Daily overview",
     charts: "Trend & spending charts",
+    dividends: "Distribution calendar",
     allocation: "Asset allocation & cash flow",
     mortgage: "Mortgage projection",
   },

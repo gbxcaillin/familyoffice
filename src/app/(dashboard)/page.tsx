@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 import NetWorthChart from "@/components/NetWorthChart";
 import SpendingChart from "@/components/SpendingChart";
 import MortgageProjection from "@/components/MortgageProjection";
+import FreedomCard from "@/components/FreedomCard";
+import AnomalyWatchdog from "@/components/AnomalyWatchdog";
+import DailyOverview from "@/components/DailyOverview";
+import DividendCalendar from "@/components/DividendCalendar";
 
 interface NetWorthData {
   totalNetWorth: number;
@@ -210,7 +214,7 @@ export default function DashboardPage() {
   const [users, setUsers] = useState({ person1: "Person 1", person2: "Person 2" });
   const [loading, setLoading] = useState(true);
   const [sectionOrder, setSectionOrder] = useState<string[]>([
-    "stats", "charts", "allocation", "mortgage",
+    "freedom", "watchdog", "stats", "overview", "charts", "dividends", "allocation", "mortgage",
   ]);
   const [breakdown, setBreakdown] = useState<Breakdown | null>(null);
   const [selected, setSelected] = useState<
@@ -266,6 +270,26 @@ export default function DashboardPage() {
         <p className="text-sm text-gbx-muted font-body mt-1">
           Combined financial position
         </p>
+      </div>
+
+      {/* Freedom Number */}
+      <div style={{ order: orderOf("freedom") }}>
+        <FreedomCard />
+      </div>
+
+      {/* Anomaly watchdog */}
+      <div style={{ order: orderOf("watchdog") }}>
+        <AnomalyWatchdog />
+      </div>
+
+      {/* Daily overview */}
+      <div style={{ order: orderOf("overview") }}>
+        <DailyOverview />
+      </div>
+
+      {/* Distribution calendar */}
+      <div style={{ order: orderOf("dividends") }}>
+        <DividendCalendar />
       </div>
 
       {/* Top stat cards */}
