@@ -345,6 +345,13 @@ export async function PUT(request: NextRequest) {
     account_id
   );
 
+  // Re-anchoring establishes a new baseline, so wipe the old price history —
+  // it was recorded against the previous anchor (and any pre-fix drift), and
+  // would otherwise show a deceptive dip/recovery on the sparkline.
+  if (reanchor) {
+    db.prepare("DELETE FROM super_price_history WHERE account_id = ?").run(account_id);
+  }
+
   await refreshAllSuper(db);
   return NextResponse.json({ ok: true });
 }
