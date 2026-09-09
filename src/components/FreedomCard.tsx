@@ -12,6 +12,8 @@ interface Freedom {
     targetOverride: number | null;
     includeHome: boolean;
     currentAge: number | null;
+    birthP1: string | null;
+    birthP2: string | null;
     retireAge: number;
   };
   netWorth: number;
@@ -28,6 +30,8 @@ interface Freedom {
   yearsToFire: number | null;
   fireDate: string | null;
   fireAge: number | null;
+  ageP1: number | null;
+  ageP2: number | null;
   coastNumber: number | null;
   coastReached: boolean | null;
   coastProgressPct: number | null;
@@ -63,13 +67,15 @@ export default function FreedomCard() {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [users, setUsers] = useState({ person1: "Person 1", person2: "Person 2" });
   const [form, setForm] = useState({
     swr: "",
     realReturn: "",
     annualSpend: "",
     targetOverride: "",
     includeHome: false,
-    currentAge: "",
+    birthP1: "",
+    birthP2: "",
     retireAge: "",
   });
 
@@ -84,7 +90,8 @@ export default function FreedomCard() {
           annualSpend: d.settings.annualSpend != null ? String(d.settings.annualSpend) : "",
           targetOverride: d.settings.targetOverride != null ? String(d.settings.targetOverride) : "",
           includeHome: d.settings.includeHome,
-          currentAge: d.settings.currentAge != null ? String(d.settings.currentAge) : "",
+          birthP1: d.settings.birthP1 || "",
+          birthP2: d.settings.birthP2 || "",
           retireAge: String(d.settings.retireAge),
         });
       })
@@ -93,6 +100,10 @@ export default function FreedomCard() {
 
   useEffect(() => {
     load();
+    fetch("/api/users")
+      .then((r) => r.json())
+      .then(setUsers)
+      .catch(() => {});
   }, [load]);
 
   async function save() {
@@ -106,7 +117,8 @@ export default function FreedomCard() {
         annualSpend: form.annualSpend,
         targetOverride: form.targetOverride,
         includeHome: form.includeHome,
-        currentAge: form.currentAge,
+        birthP1: form.birthP1,
+        birthP2: form.birthP2,
         retireAge: form.retireAge,
       }),
     });
@@ -170,8 +182,12 @@ export default function FreedomCard() {
               <input className={inputClass} value={form.annualSpend} onChange={(e) => setForm({ ...form, annualSpend: e.target.value })} placeholder="auto from spending" />
             </div>
             <div>
-              <label className={`${labelClass} text-white/50`}>Your age (for Coast)</label>
-              <input className={inputClass} value={form.currentAge} onChange={(e) => setForm({ ...form, currentAge: e.target.value })} placeholder="optional" />
+              <label className={`${labelClass} text-white/50`}>{users.person1} birth month</label>
+              <input type="month" className={inputClass} value={form.birthP1} onChange={(e) => setForm({ ...form, birthP1: e.target.value })} />
+            </div>
+            <div>
+              <label className={`${labelClass} text-white/50`}>{users.person2} birth month</label>
+              <input type="month" className={inputClass} value={form.birthP2} onChange={(e) => setForm({ ...form, birthP2: e.target.value })} />
             </div>
             <div>
               <label className={`${labelClass} text-white/50`}>Target retirement age</label>
@@ -269,8 +285,19 @@ export default function FreedomCard() {
             </div>
           </div>
 
+          {/* Ages */}
+          {(data.ageP1 != null || data.ageP2 != null) && (
+            <p className="text-[11px] text-white/40 font-body mt-3">
+              {data.ageP1 != null ? `${users.person1} ${Math.floor(data.ageP1)}` : ""}
+              {data.ageP1 != null && data.ageP2 != null ? " · " : ""}
+              {data.ageP2 != null ? `${users.person2} ${Math.floor(data.ageP2)}` : ""}
+              {" · Coast measured to age "}
+              {data.settings.retireAge} (whoever gets there first)
+            </p>
+          )}
+
           {/* Footnote: inputs */}
-          <p className="text-[11px] text-white/30 font-body mt-4">
+          <p className="text-[11px] text-white/30 font-body mt-1">
             {data.targetFixed && data.sustainableSpend != null
               ? `Supports ~${fmt0(data.sustainableSpend)}/yr at ${data.settings.swr}%`
               : `Spend ${data.annualSpend != null ? fmt0(data.annualSpend) : "—"}/yr${data.spendDerived ? " (auto)" : " (set)"}`}

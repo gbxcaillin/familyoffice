@@ -35,7 +35,9 @@ export interface FireSettings {
   annualSpend: number | null; // manual override; null → derived from transactions
   targetOverride: number | null; // fixed $ FIRE target; overrides the spend×SWR target
   includeHome: boolean; // count home equity toward the invested figure?
-  currentAge: number | null; // enables Coast FIRE when set
+  currentAge: number | null; // manual fallback age (used if no birth dates)
+  birthP1: string | null; // person1 birth month, "YYYY-MM"
+  birthP2: string | null; // person2 birth month, "YYYY-MM"
   retireAge: number; // preservation / target retirement age, e.g. 60
 }
 
@@ -46,8 +48,20 @@ export const DEFAULT_FIRE: FireSettings = {
   targetOverride: null,
   includeHome: false,
   currentAge: null,
+  birthP1: null,
+  birthP2: null,
   retireAge: 60,
 };
+
+// Fractional current age from a "YYYY-MM" birth month (assumes mid-month).
+function ageFromYearMonth(ym: string | null): number | null {
+  if (!ym) return null;
+  const [y, m] = ym.split("-").map(Number);
+  if (!y || !m) return null;
+  const birth = new Date(Date.UTC(y, m - 1, 15));
+  if (isNaN(birth.getTime())) return null;
+  return (Date.now() - birth.getTime()) / (365.25 * 86_400_000);
+}
 
 export function getFireSettings(db: Database.Database): FireSettings {
   return { ...DEFAULT_FIRE, ...getSetting(db, "fire", {} as Partial<FireSettings>) };
@@ -115,6 +129,8 @@ export interface FreedomResult {
   yearsToFire: number | null;
   fireDate: string | null;
   fireAge: number | null;
+  ageP1: number | null;
+  ageP2: number | null;
   // Coast FIRE
   coastNumber: number | null;
   coastReached: boolean | null;
@@ -127,6 +143,14 @@ export function computeFreedom(db: Database.Database): FreedomResult {
   const netWorth = totals.totalNetWorth;
   const homeEquity = (totals.byType.property || 0) + (totals.byType.loan || 0); // loan is negative
   const investedNow = s.includeHome ? netWorth : netWorth - homeEquity;
+
+  // Ages: computed live from birth months. Coast FIRE uses the OLDER partner as
+  // the binding constraint — the target must be reached by the earlier of the
+  // two retirement dates.
+  const ageP1 = ageFromYearMonth(s.birthP1);
+  const ageP2 = ageFromYearMonth(s.birthP2);
+  const derivedAges = [ageP1, ageP2].filter((a): a is number => a != null);
+  const effectiveAge = derivedAges.length ? Math.max(...derivedAges) : s.currentAge;
 
   const derivedSpend = annualisedFlow(db, "expense");
   const annualSpend = s.annualSpend != null && s.annualSpend > 0 ? s.annualSpend : derivedSpend;
@@ -151,6 +175,8 @@ export function computeFreedom(db: Database.Database): FreedomResult {
     yearsToFire: null,
     fireDate: null,
     fireAge: null,
+    ageP1,
+    ageP2,
     coastNumber: null,
     coastReached: null,
     coastProgressPct: null,
@@ -180,14 +206,14 @@ export function computeFreedom(db: Database.Database): FreedomResult {
     const d = new Date();
     d.setDate(d.getDate() + Math.round(yearsToFire * 365.25));
     fireDate = d.toISOString().slice(0, 10);
-    if (s.currentAge != null) fireAge = Math.round((s.currentAge + yearsToFire) * 10) / 10;
+    if (effectiveAge != null) fireAge = Math.round((effectiveAge + yearsToFire) * 10) / 10;
   }
 
   let coastNumber: number | null = null;
   let coastReached: boolean | null = null;
   let coastProgressPct: number | null = null;
-  if (s.currentAge != null && s.retireAge > s.currentAge) {
-    const yrs = s.retireAge - s.currentAge;
+  if (effectiveAge != null && s.retireAge > effectiveAge) {
+    const yrs = s.retireAge - effectiveAge;
     coastNumber = fireTarget / Math.pow(1 + r, yrs);
     coastReached = investedNow >= coastNumber;
     coastProgressPct = coastNumber > 0 ? (investedNow / coastNumber) * 100 : null;

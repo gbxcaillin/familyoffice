@@ -282,13 +282,33 @@ function initSchema(db: Database.Database) {
     // ignore
   }
 
-  // Seed the household Freedom Number once: a fixed $2.5M target, counting home
-  // equity. Only inserted if no 'fire' setting exists yet, so it never overrides
-  // a choice later saved from the app.
+  // Seed the household Freedom Number: a fixed $2.5M target counting home equity,
+  // and the two owners' birth months (Caillin Mar 1989, Kirra Feb 1992) so Coast
+  // FIRE works out of the box. Only *missing* keys are filled, so anything later
+  // saved from the app is preserved.
   try {
-    db.prepare(
-      "INSERT OR IGNORE INTO app_settings (key, value) VALUES ('fire', ?)"
-    ).run(JSON.stringify({ targetOverride: 2500000, includeHome: true }));
+    const seed: Record<string, unknown> = {
+      targetOverride: 2500000,
+      includeHome: true,
+      birthP1: "1989-03",
+      birthP2: "1992-02",
+    };
+    const row = db
+      .prepare("SELECT value FROM app_settings WHERE key = 'fire'")
+      .get() as { value: string } | undefined;
+    const cfg: Record<string, unknown> = row ? JSON.parse(row.value) : {};
+    let changed = false;
+    for (const [k, v] of Object.entries(seed)) {
+      if (cfg[k] === undefined) {
+        cfg[k] = v;
+        changed = true;
+      }
+    }
+    if (changed) {
+      db.prepare(
+        "INSERT OR REPLACE INTO app_settings (key, value, updated_at) VALUES ('fire', ?, datetime('now'))"
+      ).run(JSON.stringify(cfg));
+    }
   } catch {
     // app_settings may not exist on a partially-migrated schema; ignore.
   }
