@@ -11,6 +11,7 @@ interface RiskLevel {
 interface PersonProfile {
   birth: string | null;
   income: number | null;
+  sgRate: number | null;
 }
 interface Profile {
   p1: PersonProfile;
@@ -19,6 +20,19 @@ interface Profile {
   desiredReturn: number | null;
   annualSpend: number | null;
 }
+
+// Same AU resident tax (2024-25+) + 2% Medicare used server-side, for a live
+// take-home preview.
+function incomeTaxAU(g: number): number {
+  let tax = 0;
+  if (g > 190000) tax = 51638 + (g - 190000) * 0.45;
+  else if (g > 135000) tax = 31288 + (g - 135000) * 0.37;
+  else if (g > 45000) tax = 4288 + (g - 45000) * 0.3;
+  else if (g > 18200) tax = (g - 18200) * 0.16;
+  return tax + (g > 0 ? g * 0.02 : 0);
+}
+const fmtAud = (v: number) =>
+  new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 }).format(v);
 
 const inputClass =
   "w-full bg-white border border-gbx-border px-3 py-2.5 text-sm font-body text-gbx-charcoal focus:outline-none focus:border-gbx-teal transition-colors";
@@ -33,11 +47,12 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState("");
   const [form, setForm] = useState<{
-    birth1: string; income1: string;
-    birth2: string; income2: string;
+    birth1: string; income1: string; sg1: string;
+    birth2: string; income2: string; sg2: string;
     riskLevel: string; desiredReturn: string; annualSpend: string;
   }>({
-    birth1: "", income1: "", birth2: "", income2: "",
+    birth1: "", income1: "", sg1: "",
+    birth2: "", income2: "", sg2: "",
     riskLevel: "", desiredReturn: "", annualSpend: "",
   });
 
@@ -51,8 +66,10 @@ export default function ProfilePage() {
         setForm({
           birth1: p.p1.birth || "",
           income1: p.p1.income != null ? String(p.p1.income) : "",
+          sg1: p.p1.sgRate != null ? String(p.p1.sgRate) : "",
           birth2: p.p2.birth || "",
           income2: p.p2.income != null ? String(p.p2.income) : "",
+          sg2: p.p2.sgRate != null ? String(p.p2.sgRate) : "",
           riskLevel: p.riskLevel || "",
           desiredReturn: p.desiredReturn != null ? String(p.desiredReturn) : "",
           annualSpend: p.annualSpend != null ? String(p.annualSpend) : "",
@@ -68,8 +85,8 @@ export default function ProfilePage() {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        p1: { birth: form.birth1, income: form.income1 },
-        p2: { birth: form.birth2, income: form.income2 },
+        p1: { birth: form.birth1, income: form.income1, sgRate: form.sg1 },
+        p2: { birth: form.birth2, income: form.income2, sgRate: form.sg2 },
         riskLevel: form.riskLevel,
         desiredReturn: form.desiredReturn,
         annualSpend: form.annualSpend,
@@ -103,32 +120,58 @@ export default function ProfilePage() {
       {/* People */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {[
-          { name: users.person1, birth: "birth1", income: "income1" },
-          { name: users.person2, birth: "birth2", income: "income2" },
-        ].map((p) => (
-          <div key={p.birth} className={cardClass}>
-            <h2 className="font-body font-medium text-gbx-charcoal">{p.name}</h2>
-            <div>
-              <label className={labelClass}>Birth month</label>
-              <input
-                type="month"
-                className={inputClass}
-                value={form[p.birth as "birth1"]}
-                onChange={(e) => setForm({ ...form, [p.birth]: e.target.value })}
-              />
+          { name: users.person1, birth: "birth1", income: "income1", sg: "sg1" },
+          { name: users.person2, birth: "birth2", income: "income2", sg: "sg2" },
+        ].map((p) => {
+          const gross = parseFloat(form[p.income as "income1"]) || 0;
+          const sg = form[p.sg as "sg1"] !== "" ? parseFloat(form[p.sg as "sg1"]) : 12;
+          const takeHome = gross > 0 ? gross - incomeTaxAU(gross) : 0;
+          const superNet = gross > 0 ? gross * (sg / 100) * 0.85 : 0;
+          return (
+            <div key={p.birth} className={cardClass}>
+              <h2 className="font-body font-medium text-gbx-charcoal">{p.name}</h2>
+              <div>
+                <label className={labelClass}>Birth month</label>
+                <input
+                  type="month"
+                  className={inputClass}
+                  value={form[p.birth as "birth1"]}
+                  onChange={(e) => setForm({ ...form, [p.birth]: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className={labelClass}>Gross salary (AUD/yr)</label>
+                  <input
+                    type="number"
+                    className={inputClass}
+                    value={form[p.income as "income1"]}
+                    onChange={(e) => setForm({ ...form, [p.income]: e.target.value })}
+                    placeholder="e.g. 120000"
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Employer super %</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    className={inputClass}
+                    value={form[p.sg as "sg1"]}
+                    onChange={(e) => setForm({ ...form, [p.sg]: e.target.value })}
+                    placeholder="12"
+                  />
+                </div>
+              </div>
+              {gross > 0 && (
+                <p className="text-[11px] text-gbx-muted font-body">
+                  Take-home ≈ <span className="text-gbx-charcoal font-data">{fmtAud(takeHome)}</span>{" "}
+                  · employer super (net of 15% tax) ≈{" "}
+                  <span className="text-gbx-charcoal font-data">{fmtAud(superNet)}</span>/yr
+                </p>
+              )}
             </div>
-            <div>
-              <label className={labelClass}>Gross annual income (AUD)</label>
-              <input
-                type="number"
-                className={inputClass}
-                value={form[p.income as "income1"]}
-                onChange={(e) => setForm({ ...form, [p.income]: e.target.value })}
-                placeholder="e.g. 120000"
-              />
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Risk & planning */}

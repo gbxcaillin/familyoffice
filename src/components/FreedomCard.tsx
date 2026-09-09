@@ -25,6 +25,7 @@ interface Freedom {
   spendDerived: boolean;
   annualIncome: number | null;
   annualSavings: number | null;
+  incomeFromProfile: boolean;
   fireTarget: number | null;
   targetFixed: boolean;
   sustainableSpend: number | null;
@@ -209,10 +210,6 @@ export default function FreedomCard() {
               <input className={inputClass} value={form.inflation} onChange={(e) => setForm({ ...form, inflation: e.target.value })} placeholder="2.5" />
             </div>
             <div>
-              <label className={`${labelClass} text-white/50`}>Annual spend (blank = auto)</label>
-              <input className={inputClass} value={form.annualSpend} onChange={(e) => setForm({ ...form, annualSpend: e.target.value })} placeholder="auto from spending" />
-            </div>
-            <div>
               <label className={`${labelClass} text-white/50`}>{users.person1} birth month</label>
               <input type="month" className={inputClass} value={form.birthP1} onChange={(e) => setForm({ ...form, birthP1: e.target.value })} />
             </div>
@@ -356,8 +353,8 @@ export default function FreedomCard() {
               ? `Supports ~${fmt0(data.sustainableSpend)}/yr at ${data.settings.swr}%`
               : `Spend ${data.annualSpend != null ? fmt0(data.annualSpend) : "—"}/yr${data.spendDerived ? " (auto)" : " (set)"}`}
             {data.annualSavings != null
-              ? ` · saving ${fmt0(data.annualSavings)}/yr`
-              : " · savings unknown (add income)"}
+              ? ` · saving ${fmt0(data.annualSavings)}/yr${data.incomeFromProfile ? " (after tax, incl. super)" : ""}`
+              : " · savings unknown (add income in Profile)"}
             {data.settings.includeHome
               ? " · incl. property"
               : data.homeEquity !== 0
