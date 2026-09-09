@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import InfoTip from "./InfoTip";
 
 type Severity = "alert" | "warn" | "info";
 interface Anomaly {
@@ -39,8 +40,16 @@ export default function AnomalyWatchdog() {
   return (
     <div className="bg-white border border-gbx-border p-6">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal">
+        <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal flex items-center gap-1.5">
           Watchdog
+          <InfoTip label="Watchdog">
+            <p>
+              Automatic health checks over your data: implausible net-worth jumps (a likely data
+              glitch), stale price feeds, a daily job that hasn&apos;t run, super anchors that have
+              drifted from the last statement, large single-day moves, and reinvested distributions
+              waiting to be applied. &ldquo;All clear&rdquo; means nothing needs your attention.
+            </p>
+          </InfoTip>
         </h2>
         <span className="text-[11px] font-body text-gbx-muted">
           {items.length === 0

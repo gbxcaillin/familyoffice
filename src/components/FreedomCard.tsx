@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import InfoTip from "./InfoTip";
 
 interface Freedom {
   configured: boolean;
@@ -143,8 +144,25 @@ export default function FreedomCard() {
     <div className="bg-gbx-charcoal border border-white/5 p-5 sm:p-6">
       <div className="flex items-start justify-between gap-3 mb-4">
         <div>
-          <h2 className="text-[10px] uppercase tracking-[0.2em] font-body font-medium text-gbx-teal">
+          <h2 className="text-[10px] uppercase tracking-[0.2em] font-body font-medium text-gbx-teal flex items-center gap-1.5">
             Freedom Number
+            <InfoTip label="Freedom Number (FIRE)" tone="dark">
+              <p className="mb-2">
+                <strong>FIRE</strong> — Financial Independence, Retire Early — is the point where
+                your investments are big enough to live off indefinitely, so paid work becomes
+                optional.
+              </p>
+              <p className="mb-2">
+                Your <strong>target</strong> is either a fixed number you set (currently $2.5M) or,
+                if left blank, your annual spending ÷ the <strong>withdrawal rate</strong>. A 4%
+                withdrawal rate means a pot ~25× your yearly spend, the level history suggests you
+                can draw from for 30+ years without running out.
+              </p>
+              <p>
+                <strong>Real return</strong> is your expected growth after inflation — the engine
+                uses it to project how the pot (plus your saving) grows toward the target.
+              </p>
+            </InfoTip>
           </h2>
           <p className="text-[11px] text-white/40 font-body mt-1">
             {data.targetFixed && data.fireTarget != null
@@ -242,8 +260,15 @@ export default function FreedomCard() {
           {/* Milestones */}
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-white/5 border border-white/10 p-3">
-              <p className="text-[10px] uppercase tracking-[0.15em] text-white/40 font-body">
+              <p className="text-[10px] uppercase tracking-[0.15em] text-white/40 font-body flex items-center gap-1.5">
                 Work-optional in
+                <InfoTip label="Work-optional date" tone="dark">
+                  <p>
+                    When your invested total is projected to reach the target — growing at your real
+                    return and adding your current annual saving. That&apos;s full <strong>FIRE</strong>:
+                    from then on, work is optional.
+                  </p>
+                </InfoTip>
               </p>
               {data.yearsToFire != null ? (
                 <>
@@ -260,8 +285,20 @@ export default function FreedomCard() {
               )}
             </div>
             <div className="bg-white/5 border border-white/10 p-3">
-              <p className="text-[10px] uppercase tracking-[0.15em] text-white/40 font-body">
+              <p className="text-[10px] uppercase tracking-[0.15em] text-white/40 font-body flex items-center gap-1.5">
                 Coast FIRE
+                <InfoTip label="Coast FIRE" align="right" tone="dark">
+                  <p className="mb-2">
+                    The milestone <em>before</em> full FIRE: the point where what you&apos;ve already
+                    invested will grow into the target by retirement age <strong>on its own</strong>,
+                    with <strong>no further contributions</strong>.
+                  </p>
+                  <p>
+                    Once you&apos;ve &ldquo;reached Coast&rdquo;, you could stop adding money and still
+                    hit the goal — you only need to cover living costs until then. Measured to age{" "}
+                    {data.settings.retireAge} using whichever of you gets there first.
+                  </p>
+                </InfoTip>
               </p>
               {data.coastNumber == null ? (
                 <p className="font-data text-sm text-white/50 mt-0.5">Set your age to unlock</p>

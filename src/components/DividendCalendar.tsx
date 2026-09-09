@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import InfoTip from "./InfoTip";
 
 interface DivEvent {
   ticker: string;
@@ -73,8 +74,19 @@ export default function DividendCalendar() {
   return (
     <div className="bg-white border border-gbx-border p-6">
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-        <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal">
+        <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal flex items-center gap-1.5">
           Distribution Calendar
+          <InfoTip label="Distribution Calendar">
+            <p className="mb-2">
+              A 12-month forecast of the dividends and distributions your holdings are likely to
+              pay, projected from each one&apos;s recent payout history (cadence × a representative
+              per-unit amount × your current units).
+            </p>
+            <p>
+              It&apos;s an <strong>estimate</strong> — a passive-income runway to plan around, not a
+              guarantee. Actual amounts and dates vary with each fund&apos;s declarations.
+            </p>
+          </InfoTip>
         </h2>
         <span className="text-[11px] text-gbx-muted font-body">Projected · estimate</span>
       </div>
