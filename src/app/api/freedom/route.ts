@@ -38,7 +38,8 @@ export async function PUT(request: NextRequest) {
 
   const next: FireSettings = {
     swr: Math.min(10, Math.max(1, numOr(body.swr, cur.swr))),
-    realReturn: Math.min(15, Math.max(0, numOr(body.realReturn, cur.realReturn))),
+    realReturn: Math.min(20, Math.max(0, numOr(body.realReturn, cur.realReturn))),
+    inflation: Math.min(10, Math.max(0, numOr(body.inflation, cur.inflation))),
     annualSpend: numOrNull(body.annualSpend, cur.annualSpend),
     targetOverride: numOrNull(body.targetOverride, cur.targetOverride),
     includeHome:

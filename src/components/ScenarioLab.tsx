@@ -30,10 +30,17 @@ interface Baseline {
   homeEquity: number;
   annualSpend: number | null;
   annualSavings: number | null;
-  effectiveReturn: number;
+  effectiveReturn: number; // real
+  effectiveNominal: number;
+  inflation: number;
   effectiveAge: number | null;
   settings: { swr: number; targetOverride: number | null; retireAge: number; includeHome: boolean };
   mortgage: Mortgage;
+}
+
+// Nominal → real return, both %.
+function realFromNominal(nom: number, infl: number): number {
+  return ((1 + nom / 100) / (1 + infl / 100) - 1) * 100;
 }
 
 type Strategy = "schedule" | "payoff_now" | "payoff_retire";
@@ -41,8 +48,9 @@ type Strategy = "schedule" | "payoff_now" | "payoff_retire";
 interface Scenario {
   startLiquid: number; // investable, excluding home
   currentAge: number;
-  accReturn: number;
-  retReturn: number;
+  accReturn: number; // NOMINAL %
+  retReturn: number; // NOMINAL %
+  inflation: number; // %
   savings: number; // annual, into investments while mortgage is on schedule
   extra: number;
   spend: number; // annual living spend in retirement, EXCLUDING mortgage
@@ -75,19 +83,31 @@ const labelClass =
   "block text-[10px] uppercase tracking-[0.14em] font-body font-medium text-gbx-muted mb-1";
 
 function Slider({
-  label, value, min, max, step, onChange, fmt,
+  label, value, min, max, step, onChange, suffix, money,
 }: {
   label: string; value: number; min: number; max: number; step: number;
-  onChange: (v: number) => void; fmt: (v: number) => string;
+  onChange: (v: number) => void; suffix?: string; money?: boolean;
 }) {
+  // Typed value can go beyond the slider's range; the range control clamps.
   return (
     <div>
-      <div className="flex justify-between items-baseline mb-1">
+      <div className="flex justify-between items-baseline mb-1 gap-2">
         <label className={labelClass + " mb-0"}>{label}</label>
-        <span className="font-data text-sm text-gbx-charcoal tabular-nums">{fmt(value)}</span>
+        <span className="flex items-center gap-1 shrink-0">
+          {money && <span className="text-sm text-gbx-muted font-data">$</span>}
+          <input
+            type="number"
+            value={value}
+            step={step}
+            onChange={(e) => onChange(e.target.value === "" ? 0 : parseFloat(e.target.value))}
+            className="w-24 text-right bg-white border border-gbx-border px-2 py-1 text-sm font-data text-gbx-charcoal tabular-nums focus:outline-none focus:border-gbx-teal"
+          />
+          {suffix && <span className="text-sm text-gbx-muted font-data">{suffix}</span>}
+        </span>
       </div>
       <input
-        type="range" min={min} max={max} step={step} value={value}
+        type="range" min={min} max={max} step={step}
+        value={Math.min(max, Math.max(min, value))}
         onChange={(e) => onChange(parseFloat(e.target.value))}
         className="w-full accent-gbx-teal"
       />
@@ -115,8 +135,10 @@ interface ProjResult {
 function projectScenario(sc: Scenario, strategy: Strategy): ProjResult {
   const target =
     sc.target && sc.target > 0 ? sc.target : sc.spend > 0 ? sc.spend * (100 / sc.swr) : 0;
-  const accR = sc.accReturn / 100;
-  const retR = sc.retReturn / 100;
+  // Returns are entered NOMINAL; the projection runs in today's dollars, so
+  // convert to real. Property growth is already entered in real terms.
+  const accR = realFromNominal(sc.accReturn, sc.inflation) / 100;
+  const retR = realFromNominal(sc.retReturn, sc.inflation) / 100;
   const propG = sc.propGrowth / 100;
   const mRate = sc.loanRate / 100 / 12;
   const monthlyRep = sc.annualRepayment / 12;
@@ -228,11 +250,13 @@ export default function ScenarioLab() {
     const spend = b.annualSpend ?? 80000;
     const homeEquity = b.mortgage.propertyValue - b.mortgage.loanBalance;
     const startLiquid = Math.round(b.netWorth - homeEquity);
+    const nominal = b.effectiveNominal || 7.5;
     return {
       startLiquid,
       currentAge: b.effectiveAge != null ? Math.round(b.effectiveAge) : 40,
-      accReturn: b.effectiveReturn,
-      retReturn: Math.max(2, b.effectiveReturn - 1),
+      accReturn: nominal,
+      retReturn: Math.max(3, nominal - 1),
+      inflation: b.inflation ?? 2.5,
       savings: Math.max(0, Math.round(b.annualSavings ?? 0)),
       extra: 0,
       spend: Math.round(spend),
@@ -291,7 +315,7 @@ export default function ScenarioLab() {
         fetch("/api/freedom", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ swr: sc.swr, targetOverride: sc.target ?? "", retireAge: sc.retireAge }),
+          body: JSON.stringify({ swr: sc.swr, targetOverride: sc.target ?? "", retireAge: sc.retireAge, inflation: sc.inflation }),
         }),
         fetch("/api/profile", {
           method: "PUT",
@@ -323,7 +347,7 @@ export default function ScenarioLab() {
       value: result.depletionAge == null ? `past age ${sc.longevity} ✓` : `until age ${result.depletionAge}`,
       tone: result.depletionAge == null ? "good" : "bad",
     },
-    { label: `Net worth at ${sc.longevity}`, value: fmt0(result.endNetWorth), tone: result.endNetWorth > 0 ? "good" : "bad" },
+    { label: `Est. estate at ${sc.longevity} (today's $)`, value: fmt0(result.endNetWorth) },
   ];
 
   return (
@@ -366,6 +390,15 @@ export default function ScenarioLab() {
           </div>
         ))}
       </div>
+      <p className="text-[11px] text-gbx-muted font-body -mt-3">
+        Returns are entered <strong>nominal</strong>; at {sc.inflation}% inflation that&apos;s{" "}
+        <span className="text-gbx-charcoal">{realFromNominal(sc.accReturn, sc.inflation).toFixed(1)}% real</span>{" "}
+        (accumulation) /{" "}
+        <span className="text-gbx-charcoal">{realFromNominal(sc.retReturn, sc.inflation).toFixed(1)}% real</span>{" "}
+        (retirement). When your real return sits above the withdrawal rate the pot keeps growing, so
+        the <em>estate</em> figure is an output of that surplus — the goal is reaching the target and
+        the money lasting, not the terminal number.
+      </p>
 
       {/* Projection chart: net worth + liquid */}
       <div>
@@ -469,12 +502,12 @@ export default function ScenarioLab() {
               <label className={labelClass}>Annual repayment</label>
               <input className={inputClass} type="number" value={sc.annualRepayment} onChange={(e) => set({ annualRepayment: parseFloat(e.target.value) || 0 })} />
             </div>
-            <Slider label="Loan interest rate" value={sc.loanRate} min={0} max={12} step={0.1} onChange={(v) => set({ loanRate: v })} fmt={(v) => `${v.toFixed(1)}%`} />
+            <Slider label="Loan interest rate" value={sc.loanRate} min={0} max={12} step={0.1} onChange={(v) => set({ loanRate: v })} suffix="%" />
             <div>
               <label className={labelClass}>Property value</label>
               <input className={inputClass} type="number" value={sc.propertyValue} onChange={(e) => set({ propertyValue: parseFloat(e.target.value) || 0 })} />
             </div>
-            <Slider label="Property growth (real)" value={sc.propGrowth} min={-2} max={6} step={0.5} onChange={(v) => set({ propGrowth: v })} fmt={(v) => `${v.toFixed(1)}%`} />
+            <Slider label="Property growth (real)" value={sc.propGrowth} min={-2} max={6} step={0.5} onChange={(v) => set({ propGrowth: v })} suffix="%" />
             <label className="flex items-end gap-2 text-xs text-gbx-muted font-body pb-2">
               <input type="checkbox" checked={sc.includeHomeInTarget} onChange={(e) => set({ includeHomeInTarget: e.target.checked })} />
               Count home equity toward target
@@ -485,14 +518,15 @@ export default function ScenarioLab() {
 
       {/* Core controls */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-        <Slider label="Expected return (accumulation)" value={sc.accReturn} min={0} max={12} step={0.5} onChange={(v) => set({ accReturn: v })} fmt={(v) => `${v.toFixed(1)}%`} />
-        <Slider label="Return in retirement" value={sc.retReturn} min={0} max={12} step={0.5} onChange={(v) => set({ retReturn: v })} fmt={(v) => `${v.toFixed(1)}%`} />
-        <Slider label="Withdrawal rate" value={sc.swr} min={2} max={8} step={0.1} onChange={(v) => set({ swr: v })} fmt={(v) => `${v.toFixed(1)}%`} />
-        <Slider label="Retirement age" value={sc.retireAge} min={Math.ceil(sc.currentAge)} max={75} step={1} onChange={(v) => set({ retireAge: v })} fmt={(v) => `${v}`} />
-        <Slider label="Annual saving (into investments)" value={sc.savings} min={0} max={250000} step={1000} onChange={(v) => set({ savings: v })} fmt={fmtCompact} />
-        <Slider label="Living spend in retirement (excl. mortgage)" value={sc.spend} min={20000} max={300000} step={1000} onChange={(v) => set({ spend: v })} fmt={fmtCompact} />
-        <Slider label="Extra contribution / yr" value={sc.extra} min={0} max={100000} step={500} onChange={(v) => set({ extra: v })} fmt={fmtCompact} />
-        <Slider label="Plan to age" value={sc.longevity} min={80} max={105} step={1} onChange={(v) => set({ longevity: v })} fmt={(v) => `${v}`} />
+        <Slider label="Expected return — nominal (accumulation)" value={sc.accReturn} min={0} max={15} step={0.5} onChange={(v) => set({ accReturn: v })} suffix="%" />
+        <Slider label="Return in retirement — nominal" value={sc.retReturn} min={0} max={15} step={0.5} onChange={(v) => set({ retReturn: v })} suffix="%" />
+        <Slider label="Inflation" value={sc.inflation} min={0} max={8} step={0.1} onChange={(v) => set({ inflation: v })} suffix="%" />
+        <Slider label="Withdrawal rate" value={sc.swr} min={2} max={8} step={0.1} onChange={(v) => set({ swr: v })} suffix="%" />
+        <Slider label="Retirement age" value={sc.retireAge} min={Math.ceil(sc.currentAge)} max={75} step={1} onChange={(v) => set({ retireAge: v })} />
+        <Slider label="Annual saving (into investments)" value={sc.savings} min={0} max={250000} step={1000} onChange={(v) => set({ savings: v })} money />
+        <Slider label="Living spend in retirement (excl. mortgage)" value={sc.spend} min={20000} max={300000} step={1000} onChange={(v) => set({ spend: v })} money />
+        <Slider label="Extra contribution / yr" value={sc.extra} min={0} max={100000} step={500} onChange={(v) => set({ extra: v })} money />
+        <Slider label="Plan to age" value={sc.longevity} min={80} max={105} step={1} onChange={(v) => set({ longevity: v })} />
         <div>
           <label className={labelClass}>Starting liquid (excl. home)</label>
           <input className={inputClass} type="number" value={sc.startLiquid} onChange={(e) => set({ startLiquid: parseFloat(e.target.value) || 0 })} />
