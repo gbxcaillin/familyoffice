@@ -42,6 +42,14 @@ interface Freedom {
   coastNumber: number | null;
   coastReached: boolean | null;
   coastProgressPct: number | null;
+  bridge: {
+    needed: boolean;
+    covered: boolean | null;
+    shortfallAge: number | null;
+    outsideAtRetire: number | null;
+    gapYears: number;
+    preservationAge: number;
+  };
 }
 
 const fmt0 = (v: number) =>
@@ -347,8 +355,46 @@ export default function FreedomCard() {
             </p>
           )}
 
+          {/* Bridge to preservation age */}
+          {data.bridge.needed && data.bridge.covered != null && (
+            <div
+              className={`mt-3 border p-3 flex gap-2 ${
+                data.bridge.covered ? "border-gbx-teal/30 bg-gbx-teal/10" : "border-red-400/40 bg-red-500/10"
+              }`}
+            >
+              <span className="shrink-0 mt-0.5">
+                <InfoTip label={`Bridge to ${data.bridge.preservationAge}`} tone="dark">
+                  <p className="mb-2">
+                    You can&apos;t touch <strong>super</strong> until the preservation age
+                    (~{data.bridge.preservationAge}). If you stop work before then, your{" "}
+                    <strong>outside-super</strong> savings have to cover the gap years — the
+                    &ldquo;bridge&rdquo;.
+                  </p>
+                  <p>This checks whether they last from your retirement age to {data.bridge.preservationAge}. Model it in detail on the FIRE tab.</p>
+                </InfoTip>
+              </span>
+              <p className={`text-[12px] font-body ${data.bridge.covered ? "text-gbx-teal" : "text-red-300"}`}>
+                {data.bridge.covered ? (
+                  <>
+                    <strong>Bridge to {data.bridge.preservationAge}: covered.</strong> Outside-super
+                    ({data.bridge.outsideAtRetire != null ? fmt0(data.bridge.outsideAtRetire) : "—"} at{" "}
+                    {data.settings.retireAge}) funds the {data.bridge.gapYears} years until super
+                    unlocks.
+                  </>
+                ) : (
+                  <>
+                    <strong>Bridge to {data.bridge.preservationAge}: short.</strong> Outside-super
+                    runs out around age {data.bridge.shortfallAge}, before super unlocks at{" "}
+                    {data.bridge.preservationAge}. Save more, spend less, or retire later — test it on
+                    the FIRE tab.
+                  </>
+                )}
+              </p>
+            </div>
+          )}
+
           {/* Footnote: inputs */}
-          <p className="text-[11px] text-white/30 font-body mt-1">
+          <p className="text-[11px] text-white/30 font-body mt-3">
             {data.targetFixed && data.sustainableSpend != null
               ? `Supports ~${fmt0(data.sustainableSpend)}/yr at ${data.settings.swr}%`
               : `Spend ${data.annualSpend != null ? fmt0(data.annualSpend) : "—"}/yr${data.spendDerived ? " (auto)" : " (set)"}`}

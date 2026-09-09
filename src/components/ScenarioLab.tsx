@@ -84,15 +84,18 @@ const labelClass =
   "block text-[10px] uppercase tracking-[0.14em] font-body font-medium text-gbx-muted mb-1";
 
 function Slider({
-  label, value, min, max, step, onChange, suffix, money,
+  label, value, min, max, step, onChange, suffix, money, info,
 }: {
   label: string; value: number; min: number; max: number; step: number;
-  onChange: (v: number) => void; suffix?: string; money?: boolean;
+  onChange: (v: number) => void; suffix?: string; money?: boolean; info?: React.ReactNode;
 }) {
   return (
     <div>
       <div className="flex justify-between items-baseline mb-1 gap-2">
-        <label className={labelClass + " mb-0"}>{label}</label>
+        <label className={labelClass + " mb-0 flex items-center gap-1.5"}>
+          {label}
+          {info && <InfoTip label={label}>{info}</InfoTip>}
+        </label>
         <span className="flex items-center gap-1 shrink-0">
           {money && <span className="text-sm text-gbx-muted font-data">$</span>}
           <input
@@ -533,12 +536,14 @@ export default function ScenarioLab() {
               <label className={labelClass}>Annual repayment</label>
               <input className={inputClass} type="number" value={sc.annualRepayment} onChange={(e) => set({ annualRepayment: parseFloat(e.target.value) || 0 })} />
             </div>
-            <Slider label="Loan interest rate" value={sc.loanRate} min={0} max={12} step={0.1} onChange={(v) => set({ loanRate: v })} suffix="%" />
+            <Slider label="Loan interest rate" value={sc.loanRate} min={0} max={12} step={0.1} onChange={(v) => set({ loanRate: v })} suffix="%"
+              info="The mortgage's annual interest rate. Higher rates mean more of each repayment goes to interest, so the loan takes longer to clear and 'pay off early' saves more." />
             <div>
               <label className={labelClass}>Property value</label>
               <input className={inputClass} type="number" value={sc.propertyValue} onChange={(e) => set({ propertyValue: parseFloat(e.target.value) || 0 })} />
             </div>
-            <Slider label="Property growth (real)" value={sc.propGrowth} min={-2} max={6} step={0.5} onChange={(v) => set({ propGrowth: v })} suffix="%" />
+            <Slider label="Property growth (real)" value={sc.propGrowth} min={-2} max={6} step={0.5} onChange={(v) => set({ propGrowth: v })} suffix="%"
+              info="Assumed home value growth per year above inflation (already real, so 0% means it just keeps pace with inflation). Affects home equity and net worth, not the liquid pools you actually spend." />
             <label className="flex items-end gap-2 text-xs text-gbx-muted font-body pb-2">
               <input type="checkbox" checked={sc.includeHomeInTarget} onChange={(e) => set({ includeHomeInTarget: e.target.checked })} />
               Count home equity toward target
@@ -549,17 +554,28 @@ export default function ScenarioLab() {
 
       {/* Core controls */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-        <Slider label="Expected return — nominal (accumulation)" value={sc.accReturn} min={0} max={15} step={0.5} onChange={(v) => set({ accReturn: v })} suffix="%" />
-        <Slider label="Return in retirement — nominal" value={sc.retReturn} min={0} max={15} step={0.5} onChange={(v) => set({ retReturn: v })} suffix="%" />
-        <Slider label="Inflation" value={sc.inflation} min={0} max={8} step={0.1} onChange={(v) => set({ inflation: v })} suffix="%" />
-        <Slider label="Withdrawal rate" value={sc.swr} min={2} max={8} step={0.1} onChange={(v) => set({ swr: v })} suffix="%" />
-        <Slider label="Retirement age" value={sc.retireAge} min={Math.ceil(sc.currentAge)} max={75} step={1} onChange={(v) => set({ retireAge: v })} />
-        <Slider label="Super preservation age" value={sc.preservationAge} min={55} max={70} step={1} onChange={(v) => set({ preservationAge: v })} />
-        <Slider label="Discretionary saving → outside super (after tax)" value={sc.savings} min={0} max={300000} step={1000} onChange={(v) => set({ savings: v })} money />
-        <Slider label="Employer super → super (net of 15% tax)" value={sc.superContrib} min={0} max={150000} step={500} onChange={(v) => set({ superContrib: v })} money />
-        <Slider label="Living spend in retirement (excl. mortgage)" value={sc.spend} min={20000} max={300000} step={1000} onChange={(v) => set({ spend: v })} money />
-        <Slider label="Extra contribution → outside / yr" value={sc.extra} min={0} max={100000} step={500} onChange={(v) => set({ extra: v })} money />
-        <Slider label="Plan to age" value={sc.longevity} min={80} max={105} step={1} onChange={(v) => set({ longevity: v })} />
+        <Slider label="Expected return — nominal (accumulation)" value={sc.accReturn} min={0} max={15} step={0.5} onChange={(v) => set({ accReturn: v })} suffix="%"
+          info="Your assumed investment return per year while still building wealth, before inflation. The engine subtracts inflation to get the real growth rate. Higher = the pot grows faster, so you reach the target sooner." />
+        <Slider label="Return in retirement — nominal" value={sc.retReturn} min={0} max={15} step={0.5} onChange={(v) => set({ retReturn: v })} suffix="%"
+          info="The return you assume once retired — usually set a touch lower than the accumulation figure, since portfolios are typically de-risked in retirement. Drives how long the money lasts while you're drawing it down." />
+        <Slider label="Inflation" value={sc.inflation} min={0} max={8} step={0.1} onChange={(v) => set({ inflation: v })} suffix="%"
+          info="Assumed annual inflation. It's subtracted from your nominal returns so everything is shown in today's dollars. Higher inflation means your nominal returns buy less, so real growth is lower." />
+        <Slider label="Withdrawal rate" value={sc.swr} min={2} max={8} step={0.1} onChange={(v) => set({ swr: v })} suffix="%"
+          info="The share of the pot you'd draw each year in retirement. 4% is the classic 'safe' rate (a pot ≈ 25× spend). When no fixed target is set, your FIRE target = annual spend ÷ this rate. Lower = safer but a bigger target." />
+        <Slider label="Retirement age" value={sc.retireAge} min={Math.ceil(sc.currentAge)} max={75} step={1} onChange={(v) => set({ retireAge: v })}
+          info="The age you stop working and start drawing down. Retiring before the preservation age means outside-super must fund the bridge years until super unlocks." />
+        <Slider label="Super preservation age" value={sc.preservationAge} min={55} max={70} step={1} onChange={(v) => set({ preservationAge: v })}
+          info="The age you can legally access super (60 for most people now). Before it, only outside-super money is available to spend — this is what creates the 'bridge'." />
+        <Slider label="Discretionary saving → outside super (after tax)" value={sc.savings} min={0} max={300000} step={1000} onChange={(v) => set({ savings: v })} money
+          info="How much take-home pay you invest OUTSIDE super each year (after tax and after living costs). This pool is accessible any time, so it's what funds an early retirement before 60." />
+        <Slider label="Employer super → super (net of 15% tax)" value={sc.superContrib} min={0} max={150000} step={500} onChange={(v) => set({ superContrib: v })} money
+          info="Annual contributions going INTO super (employer SG plus any salary sacrifice), after the 15% contributions tax. Grows the locked super pool — great long-term, but unavailable until the preservation age." />
+        <Slider label="Living spend in retirement (excl. mortgage)" value={sc.spend} min={20000} max={300000} step={1000} onChange={(v) => set({ spend: v })} money
+          info="Your target yearly living costs in retirement, in today's dollars, NOT counting mortgage repayments (those are modelled separately). This is the main driver of how big a pot you need." />
+        <Slider label="Extra contribution → outside / yr" value={sc.extra} min={0} max={100000} step={500} onChange={(v) => set({ extra: v })} money
+          info="Any additional amount you'd invest into outside-super each year on top of your regular saving — e.g. bonuses or windfalls. Test how much a bit more saving shortens the timeline." />
+        <Slider label="Plan to age" value={sc.longevity} min={80} max={105} step={1} onChange={(v) => set({ longevity: v })}
+          info="The age you want the money to last to. The projection runs to here; 'money lasts' checks the pool survives the whole way. A longer horizon is a more conservative plan." />
         <div>
           <label className={labelClass}>Starting outside super</label>
           <input className={inputClass} type="number" value={sc.startOutside} onChange={(e) => set({ startOutside: parseFloat(e.target.value) || 0 })} />
