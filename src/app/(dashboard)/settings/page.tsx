@@ -18,8 +18,10 @@ const LABELS: Record<string, Record<string, string>> = {
     accounts: "Accounts",
     holdings: "Holdings",
     super: "Super",
+    fire: "FIRE",
     spending: "Spending",
     import: "Import & Docs",
+    profile: "Profile",
   },
   dashboardOrder: {
     freedom: "Freedom Number (FIRE)",

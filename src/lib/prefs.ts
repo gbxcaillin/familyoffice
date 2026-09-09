@@ -15,8 +15,10 @@ export const DEFAULT_PREFS: LayoutPrefs = {
     "accounts",
     "holdings",
     "super",
+    "fire",
     "spending",
     "import",
+    "profile",
   ],
   dashboardOrder: [
     "freedom",

@@ -67,6 +67,55 @@ export function getFireSettings(db: Database.Database): FireSettings {
   return { ...DEFAULT_FIRE, ...getSetting(db, "fire", {} as Partial<FireSettings>) };
 }
 
+// ---------------------------------------------------------------------------
+// User profile (household + per-person facts that feed the calculations)
+// ---------------------------------------------------------------------------
+
+export interface PersonProfile {
+  birth: string | null; // "YYYY-MM"
+  income: number | null; // gross annual, AUD
+}
+export interface Profile {
+  p1: PersonProfile;
+  p2: PersonProfile;
+  riskLevel: string | null; // key of RISK_LEVELS
+  desiredReturn: number | null; // explicit real return %, overrides the risk mapping
+  annualSpend: number | null; // planned household spend, AUD/yr
+}
+
+// Risk level → expected real (after-inflation) return %. Rough long-run
+// planning figures for a diversified portfolio at each growth/defensive mix.
+export const RISK_LEVELS: { key: string; label: string; realReturn: number; blurb: string }[] = [
+  { key: "conservative", label: "Conservative", realReturn: 2.5, blurb: "~30% growth / 70% defensive" },
+  { key: "moderate", label: "Moderate", realReturn: 4.0, blurb: "~50/50 growth / defensive" },
+  { key: "balanced", label: "Balanced", realReturn: 5.0, blurb: "~70% growth / 30% defensive" },
+  { key: "growth", label: "Growth", realReturn: 6.0, blurb: "~85% growth" },
+  { key: "high_growth", label: "High growth", realReturn: 7.0, blurb: "~100% growth" },
+];
+
+export function riskToReturn(level: string | null): number | null {
+  if (!level) return null;
+  return RISK_LEVELS.find((r) => r.key === level)?.realReturn ?? null;
+}
+
+export const DEFAULT_PROFILE: Profile = {
+  p1: { birth: null, income: null },
+  p2: { birth: null, income: null },
+  riskLevel: null,
+  desiredReturn: null,
+  annualSpend: null,
+};
+
+export function getProfile(db: Database.Database): Profile {
+  const raw = getSetting(db, "profile", {} as Partial<Profile>);
+  return {
+    ...DEFAULT_PROFILE,
+    ...raw,
+    p1: { ...DEFAULT_PROFILE.p1, ...(raw.p1 || {}) },
+    p2: { ...DEFAULT_PROFILE.p2, ...(raw.p2 || {}) },
+  };
+}
+
 // Trailing-window flow, annualised. Sums transactions of the given sign over the
 // last 365 days and scales by how much history actually exists, so a partial
 // year still yields a sensible run-rate. Returns null when there's no data.
@@ -131,6 +180,11 @@ export interface FreedomResult {
   fireAge: number | null;
   ageP1: number | null;
   ageP2: number | null;
+  effectiveAge: number | null; // older partner; drives Coast + FIRE age
+  effectiveReturn: number; // real return % actually used (profile risk/desired → fallback)
+  returnSource: "desired" | "risk" | "default";
+  riskLevel: string | null;
+  incomeFromProfile: boolean;
   // Coast FIRE
   coastNumber: number | null;
   coastReached: boolean | null;
@@ -139,22 +193,52 @@ export interface FreedomResult {
 
 export function computeFreedom(db: Database.Database): FreedomResult {
   const s = getFireSettings(db);
+  const profile = getProfile(db);
   const totals = computeNetWorth(db);
   const netWorth = totals.totalNetWorth;
   const homeEquity = (totals.byType.property || 0) + (totals.byType.loan || 0); // loan is negative
   const investedNow = s.includeHome ? netWorth : netWorth - homeEquity;
 
-  // Ages: computed live from birth months. Coast FIRE uses the OLDER partner as
-  // the binding constraint — the target must be reached by the earlier of the
-  // two retirement dates.
-  const ageP1 = ageFromYearMonth(s.birthP1);
-  const ageP2 = ageFromYearMonth(s.birthP2);
+  // Birth months: profile is the source of truth, with the FIRE setting as a
+  // fallback. Ages computed live. Coast FIRE uses the OLDER partner as the
+  // binding constraint — the target must be reached by the earlier retirement.
+  const birthP1 = profile.p1.birth ?? s.birthP1;
+  const birthP2 = profile.p2.birth ?? s.birthP2;
+  const ageP1 = ageFromYearMonth(birthP1);
+  const ageP2 = ageFromYearMonth(birthP2);
   const derivedAges = [ageP1, ageP2].filter((a): a is number => a != null);
   const effectiveAge = derivedAges.length ? Math.max(...derivedAges) : s.currentAge;
 
+  // Expected real return: explicit desired return > risk-level mapping > default.
+  let effectiveReturn = s.realReturn;
+  let returnSource: "desired" | "risk" | "default" = "default";
+  if (profile.desiredReturn != null && profile.desiredReturn > 0) {
+    effectiveReturn = profile.desiredReturn;
+    returnSource = "desired";
+  } else {
+    const rr = riskToReturn(profile.riskLevel);
+    if (rr != null) {
+      effectiveReturn = rr;
+      returnSource = "risk";
+    }
+  }
+
+  // Spend: profile > FIRE override > transaction-derived.
   const derivedSpend = annualisedFlow(db, "expense");
-  const annualSpend = s.annualSpend != null && s.annualSpend > 0 ? s.annualSpend : derivedSpend;
-  const annualIncome = annualisedFlow(db, "income");
+  const annualSpend =
+    profile.annualSpend != null && profile.annualSpend > 0
+      ? profile.annualSpend
+      : s.annualSpend != null && s.annualSpend > 0
+        ? s.annualSpend
+        : derivedSpend;
+  const spendDerived =
+    !(profile.annualSpend != null && profile.annualSpend > 0) &&
+    !(s.annualSpend != null && s.annualSpend > 0);
+
+  // Income: profile incomes (sum) > transaction-derived.
+  const profileIncome = (profile.p1.income || 0) + (profile.p2.income || 0);
+  const incomeFromProfile = profileIncome > 0;
+  const annualIncome = incomeFromProfile ? profileIncome : annualisedFlow(db, "income");
   const annualSavings =
     annualIncome != null && annualSpend != null ? annualIncome - annualSpend : null;
 
@@ -165,7 +249,7 @@ export function computeFreedom(db: Database.Database): FreedomResult {
     homeEquity,
     investedNow,
     annualSpend,
-    spendDerived: s.annualSpend == null || s.annualSpend <= 0,
+    spendDerived,
     annualIncome,
     annualSavings,
     fireTarget: null,
@@ -177,6 +261,11 @@ export function computeFreedom(db: Database.Database): FreedomResult {
     fireAge: null,
     ageP1,
     ageP2,
+    effectiveAge,
+    effectiveReturn,
+    returnSource,
+    riskLevel: profile.riskLevel,
+    incomeFromProfile,
     coastNumber: null,
     coastReached: null,
     coastProgressPct: null,
@@ -197,7 +286,7 @@ export function computeFreedom(db: Database.Database): FreedomResult {
   // What that pot sustainably supports per year at the withdrawal rate.
   const sustainableSpend = (fireTarget * s.swr) / 100;
   const progressPct = fireTarget > 0 ? (investedNow / fireTarget) * 100 : null;
-  const r = s.realReturn / 100;
+  const r = effectiveReturn / 100;
   const save = annualSavings != null && annualSavings > 0 ? annualSavings : 0;
   const yearsToFire = yearsToTarget(investedNow, fireTarget, r, save);
   let fireDate: string | null = null;

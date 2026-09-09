@@ -33,6 +33,8 @@ interface Freedom {
   fireAge: number | null;
   ageP1: number | null;
   ageP2: number | null;
+  effectiveReturn: number;
+  returnSource: "desired" | "risk" | "default";
   coastNumber: number | null;
   coastReached: boolean | null;
   coastProgressPct: number | null;
@@ -168,7 +170,7 @@ export default function FreedomCard() {
             {data.targetFixed && data.fireTarget != null
               ? `Fixed target ${fmt0(data.fireTarget)}`
               : `Independence at ${data.settings.swr}% withdrawal`}{" "}
-            · {data.settings.realReturn}% real return
+            · {data.effectiveReturn}% real return
             {data.settings.includeHome ? " · incl. property" : ""}
           </p>
         </div>
@@ -218,6 +220,10 @@ export default function FreedomCard() {
               </label>
             </div>
           </div>
+          <p className="text-[11px] text-white/40 font-body">
+            Ages, income, spend &amp; risk level live in <strong className="text-white/70">Profile</strong>.
+            Full drawdown/return scenario testing is on the <strong className="text-white/70">FIRE</strong> tab.
+          </p>
           <button onClick={save} disabled={saving} className="bg-gbx-teal text-white px-4 py-2 text-[11px] uppercase tracking-[0.15em] font-body font-medium hover:bg-gbx-deep-teal transition-colors disabled:opacity-50">
             {saving ? "Saving…" : "Save assumptions"}
           </button>
