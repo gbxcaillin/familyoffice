@@ -3,6 +3,7 @@ import getDb from "@/lib/db";
 import {
   computeFreedom,
   getFireSettings,
+  getMortgageSummary,
   setSetting,
   DEFAULT_FIRE,
   type FireSettings,
@@ -10,9 +11,10 @@ import {
 
 // The Freedom Number: FIRE target, progress, projected date and Coast FIRE,
 // computed from current net worth plus derived (or manually set) spend/savings.
+// Includes the mortgage picture so the scenario lab can model paydown.
 export async function GET() {
   const db = getDb();
-  return NextResponse.json(computeFreedom(db));
+  return NextResponse.json({ ...computeFreedom(db), mortgage: getMortgageSummary(db) });
 }
 
 // Save the household FIRE assumptions (shared, not per-user). Only known fields
