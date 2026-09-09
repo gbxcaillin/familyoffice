@@ -28,6 +28,11 @@ export async function PUT(request: NextRequest) {
       : fallback;
   const numOrNull = (v: unknown, fallback: number | null): number | null =>
     v === null || v === "" ? null : v === undefined ? fallback : numOr(v, fallback ?? 0);
+  const ymOrNull = (v: unknown, fallback: string | null): string | null => {
+    if (v === undefined) return fallback;
+    if (typeof v === "string" && /^\d{4}-\d{2}$/.test(v)) return v;
+    return null;
+  };
 
   const next: FireSettings = {
     swr: Math.min(10, Math.max(1, numOr(body.swr, cur.swr))),
@@ -37,6 +42,8 @@ export async function PUT(request: NextRequest) {
     includeHome:
       typeof body.includeHome === "boolean" ? body.includeHome : cur.includeHome,
     currentAge: numOrNull(body.currentAge, cur.currentAge),
+    birthP1: ymOrNull(body.birthP1, cur.birthP1),
+    birthP2: ymOrNull(body.birthP2, cur.birthP2),
     retireAge: Math.min(90, Math.max(30, numOr(body.retireAge, cur.retireAge || DEFAULT_FIRE.retireAge))),
   };
 
