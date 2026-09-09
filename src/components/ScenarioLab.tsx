@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
-  AreaChart,
   Area,
   Line,
   ComposedChart,
@@ -28,9 +27,11 @@ interface Baseline {
   investedNow: number;
   netWorth: number;
   homeEquity: number;
+  superBalance: number;
   annualSpend: number | null;
   annualSavings: number | null;
-  effectiveReturn: number; // real
+  discretionarySavings: number | null;
+  superContribNet: number;
   effectiveNominal: number;
   inflation: number;
   effectiveAge: number | null;
@@ -38,28 +39,25 @@ interface Baseline {
   mortgage: Mortgage;
 }
 
-// Nominal → real return, both %.
-function realFromNominal(nom: number, infl: number): number {
-  return ((1 + nom / 100) / (1 + infl / 100) - 1) * 100;
-}
-
 type Strategy = "schedule" | "payoff_now" | "payoff_retire";
 
 interface Scenario {
-  startLiquid: number; // investable, excluding home
+  startOutside: number; // investable outside super (accessible any time)
+  startSuper: number; // super (locked until preservation age)
   currentAge: number;
   accReturn: number; // NOMINAL %
   retReturn: number; // NOMINAL %
   inflation: number; // %
-  savings: number; // annual, into investments while mortgage is on schedule
-  extra: number;
-  spend: number; // annual living spend in retirement, EXCLUDING mortgage
+  savings: number; // annual discretionary into OUTSIDE super (after tax)
+  superContrib: number; // annual net employer super into SUPER
+  extra: number; // extra annual into outside super
+  spend: number; // annual living spend in retirement, EXCL mortgage
   swr: number;
   target: number | null;
   retireAge: number;
+  preservationAge: number; // super accessible from here
   longevity: number;
   includeHomeInTarget: boolean;
-  // mortgage
   propertyValue: number;
   propGrowth: number; // % real
   loanBalance: number;
@@ -76,6 +74,9 @@ function fmtCompact(v: number): string {
   if (a >= 1e3) return `$${Math.round(v / 1e3)}k`;
   return `$${Math.round(v)}`;
 }
+function realFromNominal(nom: number, infl: number): number {
+  return ((1 + nom / 100) / (1 + infl / 100) - 1) * 100;
+}
 
 const inputClass =
   "w-full bg-white border border-gbx-border px-3 py-2 text-sm font-body text-gbx-charcoal focus:outline-none focus:border-gbx-teal transition-colors tabular-nums";
@@ -88,7 +89,6 @@ function Slider({
   label: string; value: number; min: number; max: number; step: number;
   onChange: (v: number) => void; suffix?: string; money?: boolean;
 }) {
-  // Typed value can go beyond the slider's range; the range control clamps.
   return (
     <div>
       <div className="flex justify-between items-baseline mb-1 gap-2">
@@ -96,9 +96,7 @@ function Slider({
         <span className="flex items-center gap-1 shrink-0">
           {money && <span className="text-sm text-gbx-muted font-data">$</span>}
           <input
-            type="number"
-            value={value}
-            step={step}
+            type="number" value={value} step={step}
             onChange={(e) => onChange(e.target.value === "" ? 0 : parseFloat(e.target.value))}
             className="w-24 text-right bg-white border border-gbx-border px-2 py-1 text-sm font-data text-gbx-charcoal tabular-nums focus:outline-none focus:border-gbx-teal"
           />
@@ -117,45 +115,48 @@ function Slider({
 
 interface ProjResult {
   target: number;
-  points: { age: number; netWorth: number; liquid: number; loan: number }[];
+  points: { age: number; outside: number; super: number; netWorth: number }[];
   fireAge: number | null;
   yearsToFire: number | null;
-  progressPct: number | null;
-  potAtRetirement: number | null;
-  depletionAge: number | null;
+  outsideAtRetire: number | null;
+  superAtRetire: number | null;
+  bridgeFailAge: number | null; // outside super ran out before preservation age
+  depletionAge: number | null; // all accessible funds exhausted
   mortgageClearAge: number | null;
   endNetWorth: number;
   endLiquid: number;
 }
 
-// Project a scenario year by year. Liquid (investable) and the mortgage are
-// tracked separately; home equity = property − loan. Drawdown sustainability is
-// judged on LIQUID (you can't spend the house); the FIRE target is measured on
-// net worth or liquid per includeHomeInTarget.
+// Two-pool projection. OUTSIDE super is accessible any time; SUPER is locked
+// until the preservation age. Before then, retirement spending (and any
+// mortgage) must come from outside super — the "bridge". After preservation the
+// two pools combine. Everything in today's dollars (real).
 function projectScenario(sc: Scenario, strategy: Strategy): ProjResult {
   const target =
     sc.target && sc.target > 0 ? sc.target : sc.spend > 0 ? sc.spend * (100 / sc.swr) : 0;
-  // Returns are entered NOMINAL; the projection runs in today's dollars, so
-  // convert to real. Property growth is already entered in real terms.
   const accR = realFromNominal(sc.accReturn, sc.inflation) / 100;
   const retR = realFromNominal(sc.retReturn, sc.inflation) / 100;
   const propG = sc.propGrowth / 100;
   const mRate = sc.loanRate / 100 / 12;
   const monthlyRep = sc.annualRepayment / 12;
   const startAge = Math.floor(sc.currentAge);
+  const preservation = sc.preservationAge;
 
-  let liquid = sc.startLiquid;
+  let out = sc.startOutside;
+  let sup = sc.startSuper;
   let loan = sc.loanBalance;
   let prop = sc.propertyValue;
   let fireAge: number | null = null;
+  let bridgeFailAge: number | null = null;
   let depletionAge: number | null = null;
-  let potAtRetirement: number | null = null;
+  let outsideAtRetire: number | null = null;
+  let superAtRetire: number | null = null;
   let mortgageClearAge: number | null = loan <= 0 ? startAge : null;
 
-  // Pay off now (from liquid) before the timeline starts.
+  // Pay off now from OUTSIDE super (accessible).
   if (strategy === "payoff_now" && loan > 0) {
-    const pay = Math.min(loan, Math.max(0, liquid));
-    liquid -= pay;
+    const pay = Math.min(loan, Math.max(0, out));
+    out -= pay;
     loan -= pay;
     if (loan <= 0) mortgageClearAge = startAge;
   }
@@ -163,32 +164,35 @@ function projectScenario(sc: Scenario, strategy: Strategy): ProjResult {
   const points: ProjResult["points"] = [];
 
   for (let age = startAge; age <= sc.longevity; age++) {
-    // Pay off at retirement (lump from liquid) at the start of that year.
+    const homeEquity = prop - loan;
+    const netWorth = out + sup + homeEquity;
+    points.push({
+      age,
+      outside: Math.round(Math.max(0, out)),
+      super: Math.round(Math.max(0, sup)),
+      netWorth: Math.round(netWorth),
+    });
+
+    const metric = sc.includeHomeInTarget ? netWorth : out + sup;
+    if (fireAge == null && target > 0 && metric >= target) fireAge = age;
+    if (age === Math.floor(sc.retireAge)) {
+      outsideAtRetire = out;
+      superAtRetire = sup;
+    }
+
+    // Pay off at retirement — from outside first, then super if already unlocked.
     if (strategy === "payoff_retire" && age === Math.floor(sc.retireAge) && loan > 0) {
-      const pay = Math.min(loan, Math.max(0, liquid));
-      liquid -= pay;
-      loan -= pay;
+      let need = loan;
+      const fo = Math.min(out, need);
+      out -= fo; need -= fo; loan -= fo;
+      if (age >= preservation && need > 0) {
+        const fs = Math.min(sup, need);
+        sup -= fs; need -= fs; loan -= fs;
+      }
       if (loan <= 0 && mortgageClearAge == null) mortgageClearAge = age;
     }
 
-    const homeEquity = prop - loan;
-    const netWorth = liquid + homeEquity;
-    points.push({
-      age,
-      netWorth: Math.round(netWorth),
-      liquid: Math.round(Math.max(0, liquid)),
-      loan: Math.round(Math.max(0, loan)),
-    });
-
-    const metric = sc.includeHomeInTarget ? netWorth : liquid;
-    if (fireAge == null && target > 0 && metric >= target) fireAge = age;
-    if (age === Math.floor(sc.retireAge)) potAtRetirement = liquid;
-
-    // Was the mortgage active this year (drives whether repayment is a cost or
-    // freed to save)?
-    const mortgageActive = loan > 0;
-
-    // Amortise the loan over 12 months.
+    const active = loan > 0;
     for (let m = 0; m < 12 && loan > 0; m++) {
       const interest = loan * mRate;
       let pay = monthlyRep;
@@ -196,40 +200,50 @@ function projectScenario(sc: Scenario, strategy: Strategy): ProjResult {
       loan = loan + interest - pay;
       if (loan < 0) loan = 0;
     }
-    if (mortgageActive && loan <= 0 && mortgageClearAge == null) mortgageClearAge = age;
+    if (active && loan <= 0 && mortgageClearAge == null) mortgageClearAge = age;
 
-    // Cashflow. Savings is the amount invested WHILE the mortgage is on
-    // schedule; once it's gone, the old repayment is freed to invest. In
-    // retirement, an active mortgage adds to the drawdown.
     if (age < sc.retireAge) {
-      const contribution = sc.savings + sc.extra + (mortgageActive ? 0 : sc.annualRepayment);
-      liquid = liquid * (1 + accR) + contribution;
+      // Working: discretionary → outside, employer super → super.
+      out = out * (1 + accR) + sc.savings + sc.extra + (active ? 0 : sc.annualRepayment);
+      sup = sup * (1 + accR) + sc.superContrib;
     } else {
-      const draw = sc.spend + (mortgageActive ? sc.annualRepayment : 0);
-      liquid = liquid * (1 + retR) - draw;
-      if (liquid <= 0 && depletionAge == null) {
-        depletionAge = age + 1;
-        liquid = 0;
+      const draw = sc.spend + (active ? sc.annualRepayment : 0);
+      if (age < preservation) {
+        // Bridge years: only outside super is available.
+        out = out * (1 + retR) - draw;
+        sup = sup * (1 + retR);
+        if (out <= 0) {
+          if (bridgeFailAge == null) bridgeFailAge = age + 1;
+          out = 0;
+        }
+      } else {
+        // Super unlocked: draw from outside first, then super.
+        out = out * (1 + retR);
+        sup = sup * (1 + retR);
+        let need = draw;
+        const fo = Math.min(out, need); out -= fo; need -= fo;
+        if (need > 0) { const fs = Math.min(sup, need); sup -= fs; need -= fs; }
+        if (need > 0 && depletionAge == null) depletionAge = age + 1;
       }
     }
+    if (age >= preservation && out + sup <= 0 && depletionAge == null) depletionAge = age + 1;
     prop = prop * (1 + propG);
   }
 
   const yearsToFire = fireAge != null ? fireAge - sc.currentAge : null;
-  const startMetric = sc.includeHomeInTarget ? sc.startLiquid + (sc.propertyValue - sc.loanBalance) : sc.startLiquid;
-  const progressPct = target > 0 ? (startMetric / target) * 100 : null;
-
+  const last = points[points.length - 1];
   return {
     target,
     points,
     fireAge,
     yearsToFire,
-    progressPct,
-    potAtRetirement,
+    outsideAtRetire,
+    superAtRetire,
+    bridgeFailAge,
     depletionAge,
     mortgageClearAge,
-    endNetWorth: points.length ? points[points.length - 1].netWorth : 0,
-    endLiquid: points.length ? points[points.length - 1].liquid : 0,
+    endNetWorth: last ? last.netWorth : 0,
+    endLiquid: last ? last.outside + last.super : 0,
   };
 }
 
@@ -249,20 +263,25 @@ export default function ScenarioLab() {
   function seedFrom(b: Baseline): Scenario {
     const spend = b.annualSpend ?? 80000;
     const homeEquity = b.mortgage.propertyValue - b.mortgage.loanBalance;
-    const startLiquid = Math.round(b.netWorth - homeEquity);
+    const totalLiquid = b.netWorth - homeEquity;
+    const startSuper = Math.round(Math.max(0, b.superBalance));
+    const startOutside = Math.round(Math.max(0, totalLiquid - startSuper));
     const nominal = b.effectiveNominal || 7.5;
     return {
-      startLiquid,
+      startOutside,
+      startSuper,
       currentAge: b.effectiveAge != null ? Math.round(b.effectiveAge) : 40,
       accReturn: nominal,
       retReturn: Math.max(3, nominal - 1),
       inflation: b.inflation ?? 2.5,
-      savings: Math.max(0, Math.round(b.annualSavings ?? 0)),
+      savings: Math.max(0, Math.round(b.discretionarySavings ?? 0)),
+      superContrib: Math.max(0, Math.round(b.superContribNet ?? 0)),
       extra: 0,
       spend: Math.round(spend),
       swr: b.settings.swr,
       target: b.settings.targetOverride,
       retireAge: b.settings.retireAge,
+      preservationAge: 60,
       longevity: 95,
       includeHomeInTarget: b.settings.includeHome,
       propertyValue: Math.round(b.mortgage.propertyValue),
@@ -285,7 +304,6 @@ export default function ScenarioLab() {
   }, []);
 
   const result = useMemo(() => (sc ? projectScenario(sc, sc.strategy) : null), [sc]);
-  // For the comparison table, run all three mortgage strategies.
   const comparison = useMemo(() => {
     if (!sc || !sc.loanBalance) return null;
     return (["schedule", "payoff_now", "payoff_retire"] as Strategy[]).map((s) => ({
@@ -305,6 +323,7 @@ export default function ScenarioLab() {
   const set = (patch: Partial<Scenario>) => setSc({ ...sc, ...patch });
   const dirty = JSON.stringify(sc) !== JSON.stringify(seedFrom(base));
   const hasMortgage = sc.loanBalance > 0;
+  const needsBridge = sc.retireAge < sc.preservationAge;
 
   async function saveAsPlan() {
     if (!sc) return;
@@ -330,6 +349,12 @@ export default function ScenarioLab() {
     setSaving(false);
   }
 
+  const bridgeValue = !needsBridge
+    ? `n/a (retire ≥ ${sc.preservationAge})`
+    : result.bridgeFailAge == null
+      ? `covered to ${sc.preservationAge} ✓`
+      : `short at age ${result.bridgeFailAge}`;
+
   const outcomeTiles: { label: string; value: string; tone?: "good" | "bad" }[] = [
     { label: "FIRE target", value: fmt0(result.target) },
     {
@@ -338,14 +363,20 @@ export default function ScenarioLab() {
       tone: result.fireAge != null ? "good" : "bad",
     },
     {
-      label: "Mortgage clear",
-      value: !hasMortgage ? "already clear" : result.mortgageClearAge != null ? `age ${Math.round(result.mortgageClearAge)}` : `after age ${sc.longevity}`,
+      label: `Bridge to ${sc.preservationAge}`,
+      value: bridgeValue,
+      tone: !needsBridge ? undefined : result.bridgeFailAge == null ? "good" : "bad",
     },
-    { label: `Liquid at age ${sc.retireAge}`, value: result.potAtRetirement != null ? fmt0(result.potAtRetirement) : "—" },
+    { label: `Outside super at ${sc.retireAge}`, value: result.outsideAtRetire != null ? fmt0(result.outsideAtRetire) : "—" },
+    { label: `Super at ${sc.retireAge}`, value: result.superAtRetire != null ? fmt0(result.superAtRetire) : "—" },
     {
       label: "Money lasts",
       value: result.depletionAge == null ? `past age ${sc.longevity} ✓` : `until age ${result.depletionAge}`,
       tone: result.depletionAge == null ? "good" : "bad",
+    },
+    {
+      label: "Mortgage clear",
+      value: !hasMortgage ? "already clear" : result.mortgageClearAge != null ? `age ${Math.round(result.mortgageClearAge)}` : `after ${sc.longevity}`,
     },
     { label: `Est. estate at ${sc.longevity} (today's $)`, value: fmt0(result.endNetWorth) },
   ];
@@ -360,11 +391,12 @@ export default function ScenarioLab() {
               A live &ldquo;what-if&rdquo; — nothing saves unless you press Save. All figures are in today&apos;s
               dollars (real terms).
             </p>
-            <p>
-              Your <strong>liquid</strong> assets (investments &amp; cash) and the <strong>mortgage</strong> are
-              tracked separately; net worth = liquid + home equity. Whether your money &ldquo;lasts&rdquo; is judged on
-              liquid assets only — you can&apos;t spend the house.
+            <p className="mb-2">
+              <strong>Outside super</strong> is accessible any time; <strong>super</strong> is locked until the
+              preservation age (~60). If you retire earlier, your outside-super pool has to fund the years until
+              then — the <strong>bridge</strong>. The tiles and chart show whether it covers it.
             </p>
+            <p>Net worth = outside + super + home equity; &ldquo;money lasts&rdquo; is judged on the accessible pools.</p>
           </InfoTip>
         </h2>
         <div className="flex items-center gap-3">
@@ -380,36 +412,29 @@ export default function ScenarioLab() {
       </div>
 
       {/* Outcomes */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {outcomeTiles.map((t) => (
           <div key={t.label} className="bg-gbx-soft p-3">
             <p className="text-[10px] uppercase tracking-[0.12em] text-gbx-muted font-body">{t.label}</p>
-            <p className={`font-data text-base mt-0.5 ${t.tone === "good" ? "text-gbx-teal" : t.tone === "bad" ? "text-red-500" : "text-gbx-charcoal"}`}>
+            <p className={`font-data text-sm mt-0.5 ${t.tone === "good" ? "text-gbx-teal" : t.tone === "bad" ? "text-red-500" : "text-gbx-charcoal"}`}>
               {t.value}
             </p>
           </div>
         ))}
       </div>
       <p className="text-[11px] text-gbx-muted font-body -mt-3">
-        Returns are entered <strong>nominal</strong>; at {sc.inflation}% inflation that&apos;s{" "}
-        <span className="text-gbx-charcoal">{realFromNominal(sc.accReturn, sc.inflation).toFixed(1)}% real</span>{" "}
-        (accumulation) /{" "}
-        <span className="text-gbx-charcoal">{realFromNominal(sc.retReturn, sc.inflation).toFixed(1)}% real</span>{" "}
-        (retirement). When your real return sits above the withdrawal rate the pot keeps growing, so
-        the <em>estate</em> figure is an output of that surplus — the goal is reaching the target and
-        the money lasting, not the terminal number.
+        Returns entered <strong>nominal</strong>; at {sc.inflation}% inflation that&apos;s{" "}
+        <span className="text-gbx-charcoal">{realFromNominal(sc.accReturn, sc.inflation).toFixed(1)}% real</span> /{" "}
+        <span className="text-gbx-charcoal">{realFromNominal(sc.retReturn, sc.inflation).toFixed(1)}% real</span> in retirement.
+        {needsBridge && result.bridgeFailAge != null
+          ? " ⚠ Outside super runs out before super unlocks — raise savings, spend less, or retire later."
+          : ""}
       </p>
 
-      {/* Projection chart: net worth + liquid */}
+      {/* Chart: stacked outside + super, with net worth line */}
       <div>
-        <ResponsiveContainer width="100%" height={280}>
+        <ResponsiveContainer width="100%" height={290}>
           <ComposedChart data={result.points} margin={{ top: 8, right: 8, left: 4, bottom: 4 }}>
-            <defs>
-              <linearGradient id="nwFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#2E8B6E" stopOpacity={0.28} />
-                <stop offset="100%" stopColor="#2E8B6E" stopOpacity={0.02} />
-              </linearGradient>
-            </defs>
             <CartesianGrid strokeDasharray="3 3" stroke="#e7e3da" vertical={false} />
             <XAxis dataKey="age" tick={{ fontSize: 11, fill: "#8a8578" }} tickLine={false} axisLine={{ stroke: "#e7e3da" }} />
             <YAxis tickFormatter={fmtCompact} width={48} tick={{ fontSize: 11, fill: "#8a8578" }} tickLine={false} axisLine={false} />
@@ -423,8 +448,12 @@ export default function ScenarioLab() {
               <ReferenceLine y={result.target} stroke="#C68A2E" strokeDasharray="4 4" label={{ value: "target", position: "insideTopRight", fontSize: 10, fill: "#C68A2E" }} />
             )}
             <ReferenceLine x={Math.floor(sc.retireAge)} stroke="#8a8578" strokeDasharray="2 2" label={{ value: "retire", position: "top", fontSize: 10, fill: "#8a8578" }} />
-            <Area type="monotone" dataKey="netWorth" name="Net worth" stroke="#2E8B6E" strokeWidth={2} fill="url(#nwFill)" />
-            <Line type="monotone" dataKey="liquid" name="Liquid" stroke="#C68A2E" strokeWidth={2} dot={false} />
+            {needsBridge && (
+              <ReferenceLine x={sc.preservationAge} stroke="#2E8B6E" strokeDasharray="2 2" label={{ value: "super", position: "top", fontSize: 10, fill: "#2E8B6E" }} />
+            )}
+            <Area type="monotone" dataKey="outside" stackId="1" name="Outside super" stroke="#2E8B6E" strokeWidth={1.5} fill="#2E8B6E" fillOpacity={0.28} />
+            <Area type="monotone" dataKey="super" stackId="1" name="Super" stroke="#C68A2E" strokeWidth={1.5} fill="#C68A2E" fillOpacity={0.28} />
+            <Line type="monotone" dataKey="netWorth" name="Net worth" stroke="#1A5C4A" strokeWidth={2} dot={false} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -437,14 +466,14 @@ export default function ScenarioLab() {
               Mortgage strategy
               <InfoTip label="Mortgage strategy">
                 <p className="mb-2">
-                  <strong>Pay on schedule</strong> keeps your cash invested and pays the loan off with its normal
+                  <strong>Pay on schedule</strong> keeps cash invested and pays the loan with its normal
                   repayments (from savings while working, from the portfolio in retirement).
                 </p>
                 <p className="mb-2">
-                  <strong>Pay off now / at retirement</strong> clears the remaining loan with a lump from your liquid
-                  assets — a hit to invested capital now, but it stops the repayments (and interest) from then on.
+                  <strong>Pay off now / at retirement</strong> clears the loan with a lump from your outside-super
+                  assets — a hit to accessible capital, but it stops the repayments and interest.
                 </p>
-                <p>The table shows how each choice changes how long your money lasts.</p>
+                <p>The table shows how each choice changes the bridge and how long the money lasts.</p>
               </InfoTip>
             </p>
             <div className="flex gap-1.5 flex-wrap">
@@ -453,9 +482,7 @@ export default function ScenarioLab() {
                   key={s}
                   onClick={() => set({ strategy: s })}
                   className={`text-[11px] px-3 py-1.5 font-body border transition-colors ${
-                    sc.strategy === s
-                      ? "border-gbx-teal text-gbx-teal bg-gbx-teal/5"
-                      : "border-gbx-border text-gbx-muted hover:text-gbx-charcoal"
+                    sc.strategy === s ? "border-gbx-teal text-gbx-teal bg-gbx-teal/5" : "border-gbx-border text-gbx-muted hover:text-gbx-charcoal"
                   }`}
                 >
                   {STRATEGY_LABELS[s]}
@@ -470,15 +497,19 @@ export default function ScenarioLab() {
                 <thead>
                   <tr className="text-[10px] uppercase tracking-[0.1em] text-gbx-muted">
                     <th className="text-left font-medium py-1.5">Strategy</th>
+                    <th className="text-right font-medium">Bridge to {sc.preservationAge}</th>
                     <th className="text-right font-medium">Money lasts</th>
                     <th className="text-right font-medium">Mortgage clear</th>
-                    <th className="text-right font-medium">Net worth @ {sc.longevity}</th>
+                    <th className="text-right font-medium">Estate @ {sc.longevity}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gbx-border/60">
                   {comparison.map(({ strategy, res }) => (
                     <tr key={strategy} className={sc.strategy === strategy ? "bg-gbx-teal/5" : ""}>
                       <td className="py-2 text-gbx-charcoal">{STRATEGY_LABELS[strategy]}</td>
+                      <td className={`text-right font-data ${!needsBridge ? "text-gbx-muted" : res.bridgeFailAge == null ? "text-gbx-teal" : "text-red-500"}`}>
+                        {!needsBridge ? "n/a" : res.bridgeFailAge == null ? "ok" : `age ${res.bridgeFailAge}`}
+                      </td>
                       <td className={`text-right font-data ${res.depletionAge == null ? "text-gbx-teal" : "text-red-500"}`}>
                         {res.depletionAge == null ? `past ${sc.longevity}` : `age ${res.depletionAge}`}
                       </td>
@@ -523,13 +554,19 @@ export default function ScenarioLab() {
         <Slider label="Inflation" value={sc.inflation} min={0} max={8} step={0.1} onChange={(v) => set({ inflation: v })} suffix="%" />
         <Slider label="Withdrawal rate" value={sc.swr} min={2} max={8} step={0.1} onChange={(v) => set({ swr: v })} suffix="%" />
         <Slider label="Retirement age" value={sc.retireAge} min={Math.ceil(sc.currentAge)} max={75} step={1} onChange={(v) => set({ retireAge: v })} />
-        <Slider label="Annual saving (after tax, incl. super)" value={sc.savings} min={0} max={400000} step={1000} onChange={(v) => set({ savings: v })} money />
+        <Slider label="Super preservation age" value={sc.preservationAge} min={55} max={70} step={1} onChange={(v) => set({ preservationAge: v })} />
+        <Slider label="Discretionary saving → outside super (after tax)" value={sc.savings} min={0} max={300000} step={1000} onChange={(v) => set({ savings: v })} money />
+        <Slider label="Employer super → super (net of 15% tax)" value={sc.superContrib} min={0} max={150000} step={500} onChange={(v) => set({ superContrib: v })} money />
         <Slider label="Living spend in retirement (excl. mortgage)" value={sc.spend} min={20000} max={300000} step={1000} onChange={(v) => set({ spend: v })} money />
-        <Slider label="Extra contribution / yr" value={sc.extra} min={0} max={100000} step={500} onChange={(v) => set({ extra: v })} money />
+        <Slider label="Extra contribution → outside / yr" value={sc.extra} min={0} max={100000} step={500} onChange={(v) => set({ extra: v })} money />
         <Slider label="Plan to age" value={sc.longevity} min={80} max={105} step={1} onChange={(v) => set({ longevity: v })} />
         <div>
-          <label className={labelClass}>Starting liquid (excl. home)</label>
-          <input className={inputClass} type="number" value={sc.startLiquid} onChange={(e) => set({ startLiquid: parseFloat(e.target.value) || 0 })} />
+          <label className={labelClass}>Starting outside super</label>
+          <input className={inputClass} type="number" value={sc.startOutside} onChange={(e) => set({ startOutside: parseFloat(e.target.value) || 0 })} />
+        </div>
+        <div>
+          <label className={labelClass}>Starting super</label>
+          <input className={inputClass} type="number" value={sc.startSuper} onChange={(e) => set({ startSuper: parseFloat(e.target.value) || 0 })} />
         </div>
         <div>
           <label className={labelClass}>Current age</label>

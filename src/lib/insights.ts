@@ -237,6 +237,7 @@ export interface FreedomResult {
   netWorth: number;
   homeEquity: number;
   investedNow: number;
+  superBalance: number; // current super (locked until preservation age)
   annualSpend: number | null;
   spendDerived: boolean;
   annualIncome: number | null; // take-home (after tax)
@@ -350,6 +351,7 @@ export function computeFreedom(db: Database.Database): FreedomResult {
     netWorth,
     homeEquity,
     investedNow,
+    superBalance: totals.byType.super || 0,
     annualSpend,
     spendDerived,
     annualIncome,
