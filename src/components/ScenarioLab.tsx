@@ -49,7 +49,8 @@ interface Scenario {
   accReturn: number; // NOMINAL %
   retReturn: number; // NOMINAL %
   inflation: number; // %
-  savings: number; // MANUAL annual amount invested OUTSIDE super
+  investWithin: number; // invested from WITHIN the spend budget (saved, not consumed)
+  investExtra: number; // invested ON TOP of the spend budget (needs income above spend)
   superContrib: number; // annual net employer super into SUPER
   spend: number; // annual all-in spend, INCLUDING mortgage (drops when loan clears)
   swr: number;
@@ -100,7 +101,7 @@ function Slider({
         <span className="flex items-center gap-1 shrink-0">
           {money && <span className="text-sm text-gbx-muted font-data">$</span>}
           <input
-            type="number" value={value} step={step}
+            type="number" inputMode="decimal" value={value === 0 ? "" : value} step={step} placeholder="0"
             onChange={(e) => onChange(e.target.value === "" ? 0 : parseFloat(e.target.value))}
             className="w-24 text-right bg-white border border-gbx-border px-2 py-1 text-sm font-data text-gbx-charcoal tabular-nums focus:outline-none focus:border-gbx-teal"
           />
@@ -214,12 +215,13 @@ function projectScenario(sc: Scenario, strategy: Strategy): ProjResult {
       // Working: discretionary → outside (less any extra repayments diverted to
       // the mortgage); employer super → super. Once the loan clears, the base
       // repayment frees up back into investing.
-      out = out * (1 + accR) + sc.savings - extraMonthlyThisYear * 12 + (active ? 0 : sc.annualRepayment);
+      out = out * (1 + accR) + (sc.investWithin + sc.investExtra) - extraMonthlyThisYear * 12 + (active ? 0 : sc.annualRepayment);
       sup = sup * (1 + accR) + sc.superContrib;
     } else {
-      // Spend already INCLUDES the mortgage, so once the loan clears the total
-      // spend drops by the (now-gone) repayment.
-      const draw = Math.max(0, sc.spend - (active ? 0 : sc.annualRepayment));
+      // Spend INCLUDES the mortgage and the within-budget investing, neither of
+      // which continues in retirement — so the actual drawdown is spend minus the
+      // within-budget investing, and minus the mortgage once the loan clears.
+      const draw = Math.max(0, sc.spend - sc.investWithin - (active ? 0 : sc.annualRepayment));
       if (age < preservation) {
         // Bridge years: only outside super is available.
         out = out * (1 + retR) - draw;
@@ -289,7 +291,8 @@ export default function ScenarioLab() {
       accReturn: nominal,
       retReturn: Math.max(3, nominal - 1),
       inflation: b.inflation ?? 2.5,
-      savings: Math.max(0, Math.round(b.discretionarySavings ?? 0)),
+      investWithin: 0,
+      investExtra: Math.max(0, Math.round(b.discretionarySavings ?? 0)),
       superContrib: Math.max(0, Math.round(b.superContribNet ?? 0)),
       spend: Math.round(spend),
       swr: b.settings.swr,
@@ -451,10 +454,12 @@ export default function ScenarioLab() {
       {/* Feasibility / cashflow check for the working years */}
       {(() => {
         const extraAnnual = sc.strategy === "payoff_early" && sc.loanBalance > 0 ? Math.max(0, sc.extraMonthly) * 12 : 0;
-        // Spend already includes the mortgage, so only extra repayments sit on top.
-        const outflow = sc.spend + extraAnnual + sc.savings;
+        // Spend includes the mortgage and any within-budget investing, so only
+        // the on-top investing and extra repayments sit above spend.
+        const outflow = sc.spend + extraAnnual + sc.investExtra;
         const surplus = sc.netIncome - outflow;
         const ok = surplus >= 0;
+        const totalInvest = sc.investWithin + sc.investExtra;
         const row = (label: string, val: number, sign: "+" | "−") => (
           <div className="flex justify-between">
             <span className="text-gbx-muted">{label}</span>
@@ -480,7 +485,7 @@ export default function ScenarioLab() {
               {row("After-tax income", sc.netIncome, "+")}
               {row("Annual spend (incl. mortgage)", sc.spend, "−")}
               {extraAnnual > 0 && row("Extra mortgage repayment", extraAnnual, "−")}
-              {row("Invested outside super", sc.savings, "−")}
+              {sc.investExtra > 0 && row("Invested on top of spend", sc.investExtra, "−")}
             </div>
             <div className="flex justify-between items-baseline mt-3 pt-3 border-t border-gbx-border/60">
               <span className={`text-sm font-body font-medium ${ok ? "text-gbx-teal" : "text-red-600"}`}>
@@ -490,16 +495,17 @@ export default function ScenarioLab() {
                 {ok ? "" : "−"}{fmt0(Math.abs(surplus))}/yr
               </span>
             </div>
+            <p className="text-[11px] text-gbx-muted font-body mt-2">
+              Investing {fmt0(totalInvest)}/yr total — {fmt0(sc.investWithin)} from within the spend
+              budget + {fmt0(sc.investExtra)} on top.
+              {ok && surplus > 0
+                ? ` ${fmt0(surplus)}/yr is still unspent — you could invest up to that much more on top.`
+                : ""}
+            </p>
             {!ok && (
               <p className="text-[12px] text-red-600 font-body mt-2">
-                Your income can&apos;t cover this. Lower spending, invest less, reduce extra repayments,
-                or increase income — the invested figure above isn&apos;t achievable as it stands.
-              </p>
-            )}
-            {ok && surplus > 0 && (
-              <p className="text-[11px] text-gbx-muted font-body mt-2">
-                {fmt0(surplus)}/yr is left over and not invested — you could raise &ldquo;invested outside
-                super&rdquo; up to that much.
+                Your income can&apos;t cover this. Lower spending, invest less on top, reduce extra
+                repayments, or increase income — the on-top investing isn&apos;t achievable as it stands.
               </p>
             )}
           </div>
@@ -607,11 +613,11 @@ export default function ScenarioLab() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4 pt-1">
             <div>
               <label className={labelClass}>Loan balance</label>
-              <input className={inputClass} type="number" value={sc.loanBalance} onChange={(e) => set({ loanBalance: parseFloat(e.target.value) || 0 })} />
+              <input className={inputClass} type="number" inputMode="decimal" value={sc.loanBalance === 0 ? "" : sc.loanBalance} onChange={(e) => set({ loanBalance: e.target.value === "" ? 0 : parseFloat(e.target.value) || 0 })} />
             </div>
             <div>
               <label className={labelClass}>Annual repayment</label>
-              <input className={inputClass} type="number" value={sc.annualRepayment} onChange={(e) => set({ annualRepayment: parseFloat(e.target.value) || 0 })} />
+              <input className={inputClass} type="number" inputMode="decimal" value={sc.annualRepayment === 0 ? "" : sc.annualRepayment} onChange={(e) => set({ annualRepayment: e.target.value === "" ? 0 : parseFloat(e.target.value) || 0 })} />
             </div>
             <div>
               <label className={`${labelClass} flex items-center gap-1.5`}>
@@ -633,9 +639,11 @@ export default function ScenarioLab() {
                 <input
                   className={inputClass}
                   type="number"
-                  value={sc.extraMonthly}
+                  inputMode="decimal"
+                  placeholder="0"
+                  value={sc.extraMonthly === 0 ? "" : sc.extraMonthly}
                   onChange={(e) => {
-                    const v = parseFloat(e.target.value) || 0;
+                    const v = e.target.value === "" ? 0 : parseFloat(e.target.value) || 0;
                     set({
                       extraMonthly: v,
                       strategy: v > 0 ? "payoff_early" : sc.strategy === "payoff_early" ? "schedule" : sc.strategy,
@@ -648,7 +656,7 @@ export default function ScenarioLab() {
               info="The mortgage's annual interest rate. Higher rates mean more of each repayment goes to interest, so the loan takes longer to clear and 'pay off early' saves more." />
             <div>
               <label className={labelClass}>Property value</label>
-              <input className={inputClass} type="number" value={sc.propertyValue} onChange={(e) => set({ propertyValue: parseFloat(e.target.value) || 0 })} />
+              <input className={inputClass} type="number" inputMode="decimal" value={sc.propertyValue === 0 ? "" : sc.propertyValue} onChange={(e) => set({ propertyValue: e.target.value === "" ? 0 : parseFloat(e.target.value) || 0 })} />
             </div>
             <Slider label="Property growth (real)" value={sc.propGrowth} min={-2} max={6} step={0.5} onChange={(v) => set({ propGrowth: v })} suffix="%"
               info="Assumed home value growth per year above inflation (already real, so 0% means it just keeps pace with inflation). Affects home equity and net worth, not the liquid pools you actually spend." />
@@ -676,8 +684,10 @@ export default function ScenarioLab() {
           info="The age you can legally access super (60 for most people now). Before it, only outside-super money is available to spend — this is what creates the 'bridge'." />
         <Slider label="After-tax income / yr (household)" value={sc.netIncome} min={0} max={600000} step={1000} onChange={(v) => set({ netIncome: v })} money
           info="Your household take-home pay per year, after tax (auto-filled from your Profile salaries). Used for the cashflow check — spending + mortgage + investing must fit inside it. Employer super is on top and isn't counted here." />
-        <Slider label="Invested outside super / yr" value={sc.savings} min={0} max={400000} step={1000} onChange={(v) => set({ savings: v })} money
-          info="The total you invest OUTSIDE super each year (manual — includes any regular saving plus one-off amounts like bonuses). This pool is accessible any time, so it's what funds an early retirement before super unlocks. It can't exceed income − spending − mortgage (see the cashflow check)." />
+        <Slider label="Invested within spend budget / yr" value={sc.investWithin} min={0} max={200000} step={1000} onChange={(v) => set({ investWithin: v })} money
+          info="The slice of your annual spend that is actually invested rather than consumed (e.g. a regular contribution already inside your $200k budget). It's already covered by spend, so it doesn't reduce your surplus — but it does build wealth, and in retirement your drawdown drops by this amount since you stop investing it." />
+        <Slider label="Invested on top of spend / yr" value={sc.investExtra} min={0} max={400000} step={1000} onChange={(v) => set({ investExtra: v })} money
+          info="Investing ABOVE your spend budget — funded by income beyond spend (bonuses, surplus). This must fit within income − spend − extra repayments (see the cashflow check). Both this and the within-budget investing go into the outside-super pool that funds early retirement." />
         <Slider label="Employer super → super (net of 15% tax)" value={sc.superContrib} min={0} max={150000} step={500} onChange={(v) => set({ superContrib: v })} money
           info="Annual contributions going INTO super (employer SG plus any salary sacrifice), after the 15% contributions tax. Grows the locked super pool — great long-term, but unavailable until the preservation age." />
         <Slider label="Annual spend (incl. mortgage & all mandatory costs)" value={sc.spend} min={20000} max={400000} step={1000} onChange={(v) => set({ spend: v })} money
@@ -686,15 +696,15 @@ export default function ScenarioLab() {
           info="The age you want the money to last to. The projection runs to here; 'money lasts' checks the pool survives the whole way. A longer horizon is a more conservative plan." />
         <div>
           <label className={labelClass}>Starting outside super</label>
-          <input className={inputClass} type="number" value={sc.startOutside} onChange={(e) => set({ startOutside: parseFloat(e.target.value) || 0 })} />
+          <input className={inputClass} type="number" inputMode="decimal" value={sc.startOutside === 0 ? "" : sc.startOutside} onChange={(e) => set({ startOutside: e.target.value === "" ? 0 : parseFloat(e.target.value) || 0 })} />
         </div>
         <div>
           <label className={labelClass}>Starting super</label>
-          <input className={inputClass} type="number" value={sc.startSuper} onChange={(e) => set({ startSuper: parseFloat(e.target.value) || 0 })} />
+          <input className={inputClass} type="number" inputMode="decimal" value={sc.startSuper === 0 ? "" : sc.startSuper} onChange={(e) => set({ startSuper: e.target.value === "" ? 0 : parseFloat(e.target.value) || 0 })} />
         </div>
         <div>
           <label className={labelClass}>Current age</label>
-          <input className={inputClass} type="number" value={sc.currentAge} onChange={(e) => set({ currentAge: parseFloat(e.target.value) || 0 })} />
+          <input className={inputClass} type="number" inputMode="decimal" value={sc.currentAge === 0 ? "" : sc.currentAge} onChange={(e) => set({ currentAge: e.target.value === "" ? 0 : parseFloat(e.target.value) || 0 })} />
         </div>
         <div>
           <label className={labelClass}>Fixed target (blank = spend ÷ rate)</label>
