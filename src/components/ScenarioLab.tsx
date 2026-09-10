@@ -51,7 +51,7 @@ interface Scenario {
   inflation: number; // %
   savings: number; // MANUAL annual amount invested OUTSIDE super
   superContrib: number; // annual net employer super into SUPER
-  spend: number; // annual living spend in retirement, EXCL mortgage
+  spend: number; // annual all-in spend, INCLUDING mortgage (drops when loan clears)
   swr: number;
   target: number | null;
   retireAge: number;
@@ -217,7 +217,9 @@ function projectScenario(sc: Scenario, strategy: Strategy): ProjResult {
       out = out * (1 + accR) + sc.savings - extraMonthlyThisYear * 12 + (active ? 0 : sc.annualRepayment);
       sup = sup * (1 + accR) + sc.superContrib;
     } else {
-      const draw = sc.spend + (active ? sc.annualRepayment : 0);
+      // Spend already INCLUDES the mortgage, so once the loan clears the total
+      // spend drops by the (now-gone) repayment.
+      const draw = Math.max(0, sc.spend - (active ? 0 : sc.annualRepayment));
       if (age < preservation) {
         // Bridge years: only outside super is available.
         out = out * (1 + retR) - draw;
@@ -448,15 +450,15 @@ export default function ScenarioLab() {
 
       {/* Feasibility / cashflow check for the working years */}
       {(() => {
-        const extraAnnual = sc.strategy === "payoff_early" ? Math.max(0, sc.extraMonthly) * 12 : 0;
-        const mortgageAnnual = sc.loanBalance > 0 ? sc.annualRepayment + extraAnnual : 0;
-        const outflow = sc.spend + mortgageAnnual + sc.savings;
+        const extraAnnual = sc.strategy === "payoff_early" && sc.loanBalance > 0 ? Math.max(0, sc.extraMonthly) * 12 : 0;
+        // Spend already includes the mortgage, so only extra repayments sit on top.
+        const outflow = sc.spend + extraAnnual + sc.savings;
         const surplus = sc.netIncome - outflow;
         const ok = surplus >= 0;
         const row = (label: string, val: number, sign: "+" | "−") => (
           <div className="flex justify-between">
             <span className="text-gbx-muted">{label}</span>
-            <span className={`font-data tabular-nums ${sign === "−" ? "text-gbx-charcoal" : "text-gbx-charcoal"}`}>
+            <span className="font-data tabular-nums text-gbx-charcoal">
               {sign === "−" ? "− " : ""}{fmt0(val)}
             </span>
           </div>
@@ -468,19 +470,16 @@ export default function ScenarioLab() {
               <InfoTip label="Cashflow check">
                 <p className="mb-2">
                   Confirms the plan is actually fundable: your after-tax income must cover your
-                  spending, mortgage repayments <em>and</em> the amount you invest each year — you
-                  can&apos;t invest money you don&apos;t have.
+                  all-in spending (which <em>includes</em> the mortgage) plus any extra repayments and
+                  the amount you invest each year — you can&apos;t invest money you don&apos;t have.
                 </p>
-                <p>
-                  Employer super is paid on top of salary, so it isn&apos;t counted here. Assumes your
-                  living spend while working is the same figure as retirement spend.
-                </p>
+                <p>Employer super is paid on top of salary, so it isn&apos;t counted here.</p>
               </InfoTip>
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5 text-sm font-body">
               {row("After-tax income", sc.netIncome, "+")}
-              {row("Living spend", sc.spend, "−")}
-              {row(`Mortgage${extraAnnual > 0 ? " (incl. extra)" : ""}`, mortgageAnnual, "−")}
+              {row("Annual spend (incl. mortgage)", sc.spend, "−")}
+              {extraAnnual > 0 && row("Extra mortgage repayment", extraAnnual, "−")}
               {row("Invested outside super", sc.savings, "−")}
             </div>
             <div className="flex justify-between items-baseline mt-3 pt-3 border-t border-gbx-border/60">
@@ -681,8 +680,8 @@ export default function ScenarioLab() {
           info="The total you invest OUTSIDE super each year (manual — includes any regular saving plus one-off amounts like bonuses). This pool is accessible any time, so it's what funds an early retirement before super unlocks. It can't exceed income − spending − mortgage (see the cashflow check)." />
         <Slider label="Employer super → super (net of 15% tax)" value={sc.superContrib} min={0} max={150000} step={500} onChange={(v) => set({ superContrib: v })} money
           info="Annual contributions going INTO super (employer SG plus any salary sacrifice), after the 15% contributions tax. Grows the locked super pool — great long-term, but unavailable until the preservation age." />
-        <Slider label="Living spend in retirement (excl. mortgage)" value={sc.spend} min={20000} max={300000} step={1000} onChange={(v) => set({ spend: v })} money
-          info="Your target yearly living costs in retirement, in today's dollars, NOT counting mortgage repayments (those are modelled separately). This is the main driver of how big a pot you need." />
+        <Slider label="Annual spend (incl. mortgage & all mandatory costs)" value={sc.spend} min={20000} max={400000} step={1000} onChange={(v) => set({ spend: v })} money
+          info="Your total yearly outgoings in today's dollars — everything, INCLUDING the mortgage. Once the loan is paid off, the model automatically drops your spend by the repayment (mortgage-free is cheaper). This is the main driver of how big a pot you need." />
         <Slider label="Plan to age" value={sc.longevity} min={80} max={105} step={1} onChange={(v) => set({ longevity: v })}
           info="The age you want the money to last to. The projection runs to here; 'money lasts' checks the pool survives the whole way. A longer horizon is a more conservative plan." />
         <div>
