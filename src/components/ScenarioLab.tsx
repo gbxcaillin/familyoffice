@@ -48,9 +48,8 @@ interface Scenario {
   accReturn: number; // NOMINAL %
   retReturn: number; // NOMINAL %
   inflation: number; // %
-  savings: number; // annual discretionary into OUTSIDE super (after tax)
+  savings: number; // MANUAL annual amount invested OUTSIDE super
   superContrib: number; // annual net employer super into SUPER
-  extra: number; // extra annual into outside super
   spend: number; // annual living spend in retirement, EXCL mortgage
   swr: number;
   target: number | null;
@@ -207,7 +206,7 @@ function projectScenario(sc: Scenario, strategy: Strategy): ProjResult {
 
     if (age < sc.retireAge) {
       // Working: discretionary → outside, employer super → super.
-      out = out * (1 + accR) + sc.savings + sc.extra + (active ? 0 : sc.annualRepayment);
+      out = out * (1 + accR) + sc.savings + (active ? 0 : sc.annualRepayment);
       sup = sup * (1 + accR) + sc.superContrib;
     } else {
       const draw = sc.spend + (active ? sc.annualRepayment : 0);
@@ -279,7 +278,6 @@ export default function ScenarioLab() {
       inflation: b.inflation ?? 2.5,
       savings: Math.max(0, Math.round(b.discretionarySavings ?? 0)),
       superContrib: Math.max(0, Math.round(b.superContribNet ?? 0)),
-      extra: 0,
       spend: Math.round(spend),
       swr: b.settings.swr,
       target: b.settings.targetOverride,
@@ -566,14 +564,12 @@ export default function ScenarioLab() {
           info="The age you stop working and start drawing down. Retiring before the preservation age means outside-super must fund the bridge years until super unlocks." />
         <Slider label="Super preservation age" value={sc.preservationAge} min={55} max={70} step={1} onChange={(v) => set({ preservationAge: v })}
           info="The age you can legally access super (60 for most people now). Before it, only outside-super money is available to spend — this is what creates the 'bridge'." />
-        <Slider label="Discretionary saving → outside super (after tax)" value={sc.savings} min={0} max={300000} step={1000} onChange={(v) => set({ savings: v })} money
-          info="How much take-home pay you invest OUTSIDE super each year (after tax and after living costs). This pool is accessible any time, so it's what funds an early retirement before 60." />
+        <Slider label="Invested outside super / yr" value={sc.savings} min={0} max={400000} step={1000} onChange={(v) => set({ savings: v })} money
+          info="The total you invest OUTSIDE super each year (manual — includes any regular saving plus one-off amounts like bonuses). This pool is accessible any time, so it's what funds an early retirement before super unlocks." />
         <Slider label="Employer super → super (net of 15% tax)" value={sc.superContrib} min={0} max={150000} step={500} onChange={(v) => set({ superContrib: v })} money
           info="Annual contributions going INTO super (employer SG plus any salary sacrifice), after the 15% contributions tax. Grows the locked super pool — great long-term, but unavailable until the preservation age." />
         <Slider label="Living spend in retirement (excl. mortgage)" value={sc.spend} min={20000} max={300000} step={1000} onChange={(v) => set({ spend: v })} money
           info="Your target yearly living costs in retirement, in today's dollars, NOT counting mortgage repayments (those are modelled separately). This is the main driver of how big a pot you need." />
-        <Slider label="Extra contribution → outside / yr" value={sc.extra} min={0} max={100000} step={500} onChange={(v) => set({ extra: v })} money
-          info="Any additional amount you'd invest into outside-super each year on top of your regular saving — e.g. bonuses or windfalls. Test how much a bit more saving shortens the timeline." />
         <Slider label="Plan to age" value={sc.longevity} min={80} max={105} step={1} onChange={(v) => set({ longevity: v })}
           info="The age you want the money to last to. The projection runs to here; 'money lasts' checks the pool survives the whole way. A longer horizon is a more conservative plan." />
         <div>
