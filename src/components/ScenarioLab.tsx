@@ -29,6 +29,7 @@ interface Baseline {
   superBalance: number;
   annualSpend: number | null;
   annualSavings: number | null;
+  annualIncome: number | null; // household take-home (after tax)
   discretionarySavings: number | null;
   superContribNet: number;
   effectiveNominal: number;
@@ -43,6 +44,7 @@ type Strategy = "schedule" | "payoff_early" | "payoff_retire";
 interface Scenario {
   startOutside: number; // investable outside super (accessible any time)
   startSuper: number; // super (locked until preservation age)
+  netIncome: number; // household after-tax income / yr (for the feasibility check)
   currentAge: number;
   accReturn: number; // NOMINAL %
   retReturn: number; // NOMINAL %
@@ -280,6 +282,7 @@ export default function ScenarioLab() {
     return {
       startOutside,
       startSuper,
+      netIncome: Math.max(0, Math.round(b.annualIncome ?? 0)),
       currentAge: b.effectiveAge != null ? Math.round(b.effectiveAge) : 40,
       accReturn: nominal,
       retReturn: Math.max(3, nominal - 1),
@@ -442,6 +445,67 @@ export default function ScenarioLab() {
           ? " ⚠ Outside super runs out before super unlocks — raise savings, spend less, or retire later."
           : ""}
       </p>
+
+      {/* Feasibility / cashflow check for the working years */}
+      {(() => {
+        const extraAnnual = sc.strategy === "payoff_early" ? Math.max(0, sc.extraMonthly) * 12 : 0;
+        const mortgageAnnual = sc.loanBalance > 0 ? sc.annualRepayment + extraAnnual : 0;
+        const outflow = sc.spend + mortgageAnnual + sc.savings;
+        const surplus = sc.netIncome - outflow;
+        const ok = surplus >= 0;
+        const row = (label: string, val: number, sign: "+" | "−") => (
+          <div className="flex justify-between">
+            <span className="text-gbx-muted">{label}</span>
+            <span className={`font-data tabular-nums ${sign === "−" ? "text-gbx-charcoal" : "text-gbx-charcoal"}`}>
+              {sign === "−" ? "− " : ""}{fmt0(val)}
+            </span>
+          </div>
+        );
+        return (
+          <div className={`border p-4 ${ok ? "border-gbx-border bg-gbx-soft" : "border-red-400/50 bg-red-500/5"}`}>
+            <p className="text-[10px] uppercase tracking-[0.14em] font-body font-medium text-gbx-charcoal flex items-center gap-1.5 mb-3">
+              Cashflow check — working years
+              <InfoTip label="Cashflow check">
+                <p className="mb-2">
+                  Confirms the plan is actually fundable: your after-tax income must cover your
+                  spending, mortgage repayments <em>and</em> the amount you invest each year — you
+                  can&apos;t invest money you don&apos;t have.
+                </p>
+                <p>
+                  Employer super is paid on top of salary, so it isn&apos;t counted here. Assumes your
+                  living spend while working is the same figure as retirement spend.
+                </p>
+              </InfoTip>
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-1.5 text-sm font-body">
+              {row("After-tax income", sc.netIncome, "+")}
+              {row("Living spend", sc.spend, "−")}
+              {row(`Mortgage${extraAnnual > 0 ? " (incl. extra)" : ""}`, mortgageAnnual, "−")}
+              {row("Invested outside super", sc.savings, "−")}
+            </div>
+            <div className="flex justify-between items-baseline mt-3 pt-3 border-t border-gbx-border/60">
+              <span className={`text-sm font-body font-medium ${ok ? "text-gbx-teal" : "text-red-600"}`}>
+                {ok ? "Fundable — surplus" : "Not fundable — shortfall"}
+              </span>
+              <span className={`font-data text-base ${ok ? "text-gbx-teal" : "text-red-600"}`}>
+                {ok ? "" : "−"}{fmt0(Math.abs(surplus))}/yr
+              </span>
+            </div>
+            {!ok && (
+              <p className="text-[12px] text-red-600 font-body mt-2">
+                Your income can&apos;t cover this. Lower spending, invest less, reduce extra repayments,
+                or increase income — the invested figure above isn&apos;t achievable as it stands.
+              </p>
+            )}
+            {ok && surplus > 0 && (
+              <p className="text-[11px] text-gbx-muted font-body mt-2">
+                {fmt0(surplus)}/yr is left over and not invested — you could raise &ldquo;invested outside
+                super&rdquo; up to that much.
+              </p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Chart: stacked outside + super, with net worth line */}
       <div>
@@ -611,8 +675,10 @@ export default function ScenarioLab() {
           info="The age you stop working and start drawing down. Retiring before the preservation age means outside-super must fund the bridge years until super unlocks." />
         <Slider label="Super preservation age" value={sc.preservationAge} min={55} max={70} step={1} onChange={(v) => set({ preservationAge: v })}
           info="The age you can legally access super (60 for most people now). Before it, only outside-super money is available to spend — this is what creates the 'bridge'." />
+        <Slider label="After-tax income / yr (household)" value={sc.netIncome} min={0} max={600000} step={1000} onChange={(v) => set({ netIncome: v })} money
+          info="Your household take-home pay per year, after tax (auto-filled from your Profile salaries). Used for the cashflow check — spending + mortgage + investing must fit inside it. Employer super is on top and isn't counted here." />
         <Slider label="Invested outside super / yr" value={sc.savings} min={0} max={400000} step={1000} onChange={(v) => set({ savings: v })} money
-          info="The total you invest OUTSIDE super each year (manual — includes any regular saving plus one-off amounts like bonuses). This pool is accessible any time, so it's what funds an early retirement before super unlocks." />
+          info="The total you invest OUTSIDE super each year (manual — includes any regular saving plus one-off amounts like bonuses). This pool is accessible any time, so it's what funds an early retirement before super unlocks. It can't exceed income − spending − mortgage (see the cashflow check)." />
         <Slider label="Employer super → super (net of 15% tax)" value={sc.superContrib} min={0} max={150000} step={500} onChange={(v) => set({ superContrib: v })} money
           info="Annual contributions going INTO super (employer SG plus any salary sacrifice), after the 15% contributions tax. Grows the locked super pool — great long-term, but unavailable until the preservation age." />
         <Slider label="Living spend in retirement (excl. mortgage)" value={sc.spend} min={20000} max={300000} step={1000} onChange={(v) => set({ spend: v })} money
