@@ -19,6 +19,7 @@ interface Profile {
   riskLevel: string | null;
   desiredReturn: number | null;
   annualSpend: number | null;
+  annualInvest: number | null;
 }
 
 // Same AU resident tax (2024-25+) + 2% Medicare used server-side, for a live
@@ -49,11 +50,11 @@ export default function ProfilePage() {
   const [form, setForm] = useState<{
     birth1: string; income1: string; sg1: string;
     birth2: string; income2: string; sg2: string;
-    riskLevel: string; desiredReturn: string; annualSpend: string;
+    riskLevel: string; desiredReturn: string; annualSpend: string; annualInvest: string;
   }>({
     birth1: "", income1: "", sg1: "",
     birth2: "", income2: "", sg2: "",
-    riskLevel: "", desiredReturn: "", annualSpend: "",
+    riskLevel: "", desiredReturn: "", annualSpend: "", annualInvest: "",
   });
 
   useEffect(() => {
@@ -73,6 +74,7 @@ export default function ProfilePage() {
           riskLevel: p.riskLevel || "",
           desiredReturn: p.desiredReturn != null ? String(p.desiredReturn) : "",
           annualSpend: p.annualSpend != null ? String(p.annualSpend) : "",
+          annualInvest: p.annualInvest != null ? String(p.annualInvest) : "",
         });
       })
       .finally(() => setLoading(false));
@@ -90,6 +92,7 @@ export default function ProfilePage() {
         riskLevel: form.riskLevel,
         desiredReturn: form.desiredReturn,
         annualSpend: form.annualSpend,
+        annualInvest: form.annualInvest,
       }),
     });
     setSaving(false);
@@ -205,13 +208,23 @@ export default function ProfilePage() {
             />
           </div>
           <div>
-            <label className={labelClass}>Planned annual spend in retirement (AUD)</label>
+            <label className={labelClass}>Annual spending (AUD) — manual</label>
             <input
               type="number"
               className={inputClass}
               value={form.annualSpend}
               onChange={(e) => setForm({ ...form, annualSpend: e.target.value })}
-              placeholder="blank = estimated from spending"
+              placeholder="e.g. 90000"
+            />
+          </div>
+          <div>
+            <label className={labelClass}>Invested outside super / yr (AUD) — manual</label>
+            <input
+              type="number"
+              className={inputClass}
+              value={form.annualInvest}
+              onChange={(e) => setForm({ ...form, annualInvest: e.target.value })}
+              placeholder="what you invest each year"
             />
           </div>
         </div>
@@ -235,8 +248,11 @@ export default function ProfilePage() {
       </div>
 
       <p className="text-[11px] text-gbx-muted font-body">
-        Note: income here is used to estimate your saving rate for FIRE projections. The fixed FIRE
-        target, withdrawal rate and whether to include home equity live on the FIRE tab.
+        The projections auto-factor only the unavoidable flows — after-tax income, employer super
+        (SGC), and your mortgage &amp; its repayments — plus live account balances. Your spending and
+        the amount you invest each year are <strong>manual</strong> figures you set here (nothing is
+        estimated from the transactions table). Target, withdrawal rate and home-equity toggle live
+        on the FIRE tab.
       </p>
     </div>
   );

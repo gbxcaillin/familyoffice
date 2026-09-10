@@ -65,6 +65,7 @@ export async function PUT(request: NextRequest) {
     riskLevel: validRisk,
     desiredReturn: num(body.desiredReturn, cur.desiredReturn),
     annualSpend: num(body.annualSpend, cur.annualSpend),
+    annualInvest: num(body.annualInvest, cur.annualInvest),
   };
 
   setSetting(db, "profile", next);

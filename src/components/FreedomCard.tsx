@@ -25,6 +25,8 @@ interface Freedom {
   spendDerived: boolean;
   annualIncome: number | null;
   annualSavings: number | null;
+  annualInvest: number;
+  superContribNet: number;
   incomeFromProfile: boolean;
   fireTarget: number | null;
   targetFixed: boolean;
@@ -88,6 +90,7 @@ export default function FreedomCard() {
     realReturn: "",
     inflation: "",
     annualSpend: "",
+    annualInvest: "",
     targetOverride: "",
     includeHome: false,
     birthP1: "",
@@ -104,8 +107,8 @@ export default function FreedomCard() {
           swr: String(d.settings.swr),
           realReturn: String(d.settings.realReturn),
           inflation: String(d.settings.inflation),
-          // Prefill only if spend is a set value; blank means auto-derived.
-          annualSpend: !d.spendDerived && d.annualSpend != null ? String(d.annualSpend) : "",
+          annualSpend: d.annualSpend != null ? String(d.annualSpend) : "",
+          annualInvest: d.annualInvest > 0 ? String(d.annualInvest) : "",
           targetOverride: d.settings.targetOverride != null ? String(d.settings.targetOverride) : "",
           includeHome: d.settings.includeHome,
           birthP1: d.settings.birthP1 || "",
@@ -131,7 +134,7 @@ export default function FreedomCard() {
     await fetch("/api/profile", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ annualSpend: form.annualSpend }),
+      body: JSON.stringify({ annualSpend: form.annualSpend, annualInvest: form.annualInvest }),
     });
     const res = await fetch("/api/freedom", {
       method: "PUT",
@@ -239,7 +242,20 @@ export default function FreedomCard() {
                   </p>
                 </InfoTip>
               </label>
-              <input className={inputClass} value={form.annualSpend} onChange={(e) => setForm({ ...form, annualSpend: e.target.value })} placeholder="blank = auto from spending" />
+              <input className={inputClass} value={form.annualSpend} onChange={(e) => setForm({ ...form, annualSpend: e.target.value })} placeholder="e.g. 90000" />
+            </div>
+            <div>
+              <label className={`${labelClass} text-white/50 flex items-center gap-1.5`}>
+                Invested / yr $
+                <InfoTip label="Invested outside super / yr" tone="dark">
+                  <p>
+                    How much you invest OUTSIDE super each year (manual). Employer super is added
+                    automatically on top. This is the accessible-before-60 money that grows your
+                    outside-super pool.
+                  </p>
+                </InfoTip>
+              </label>
+              <input className={inputClass} value={form.annualInvest} onChange={(e) => setForm({ ...form, annualInvest: e.target.value })} placeholder="e.g. 40000" />
             </div>
             <div>
               <label className={`${labelClass} text-white/50`}>{users.person1} birth month</label>
@@ -422,9 +438,8 @@ export default function FreedomCard() {
             {data.targetFixed && data.sustainableSpend != null
               ? `Supports ~${fmt0(data.sustainableSpend)}/yr at ${data.settings.swr}%`
               : `Spend ${data.annualSpend != null ? fmt0(data.annualSpend) : "—"}/yr${data.spendDerived ? " (auto)" : " (set)"}`}
-            {data.annualSavings != null
-              ? ` · saving ${fmt0(data.annualSavings)}/yr${data.incomeFromProfile ? " (after tax, incl. super)" : ""}`
-              : " · savings unknown (add income in Profile)"}
+            {` · investing ${fmt0(data.annualInvest)}/yr outside`}
+            {data.superContribNet > 0 ? ` + ${fmt0(data.superContribNet)}/yr super` : ""}
             {data.settings.includeHome
               ? " · incl. property"
               : data.homeEquity !== 0
