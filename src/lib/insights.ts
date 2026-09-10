@@ -106,7 +106,8 @@ export interface Profile {
   p2: PersonProfile;
   riskLevel: string | null; // key of RISK_LEVELS
   desiredReturn: number | null; // explicit real return %, overrides the risk mapping
-  annualSpend: number | null; // planned household spend, AUD/yr
+  annualSpend: number | null; // MANUAL household spend, AUD/yr
+  annualInvest: number | null; // MANUAL amount invested outside super each year, AUD/yr
 }
 
 // Risk level → expected NOMINAL return % (before inflation). Rough long-run
@@ -130,6 +131,7 @@ export const DEFAULT_PROFILE: Profile = {
   riskLevel: null,
   desiredReturn: null,
   annualSpend: null,
+  annualInvest: null,
 };
 
 export const DEFAULT_SG_RATE = 12; // % employer super guarantee (on top of salary)
@@ -186,29 +188,6 @@ export function getProfile(db: Database.Database): Profile {
   };
 }
 
-// Trailing-window flow, annualised. Sums transactions of the given sign over the
-// last 365 days and scales by how much history actually exists, so a partial
-// year still yields a sensible run-rate. Returns null when there's no data.
-function annualisedFlow(db: Database.Database, sign: "income" | "expense"): number | null {
-  const cond = sign === "income" ? "amount > 0" : "amount < 0";
-  const row = db
-    .prepare(
-      `SELECT SUM(ABS(amount)) as total,
-              MIN(date) as first_date,
-              COUNT(*) as n
-       FROM transactions
-       WHERE ${cond} AND date >= date('now','-365 days')`
-    )
-    .get() as { total: number | null; first_date: string | null; n: number };
-  if (!row || !row.total || !row.first_date || row.n === 0) return null;
-  const firstMs = new Date(row.first_date + "T00:00:00Z").getTime();
-  const days = Math.max(1, (Date.now() - firstMs) / 86_400_000);
-  const window = Math.min(days, 365);
-  // Need a little history before annualising, or the run-rate is noise.
-  if (window < 14) return null;
-  return (row.total * 365) / window;
-}
-
 // Solve for the number of years t such that
 //   present*(1+r)^t + save*(((1+r)^t - 1)/r) = target
 // via bisection. Returns null when unreachable within 100 years.
@@ -244,8 +223,9 @@ export interface FreedomResult {
   annualSavings: number | null; // discretionary + net employer super
   householdGross: number; // total gross salaries
   householdNet: number; // total after-tax
-  superContribNet: number; // net employer super into super each year
-  discretionarySavings: number | null; // take-home − spend
+  superContribNet: number; // net employer super into super each year (auto)
+  annualInvest: number; // MANUAL amount invested outside super each year
+  discretionarySavings: number | null; // == annualInvest (kept for the scenario seed)
   fireTarget: number | null;
   targetFixed: boolean;
   sustainableSpend: number | null;
@@ -317,22 +297,18 @@ export function computeFreedom(db: Database.Database): FreedomResult {
   const inflation = s.inflation ?? 2.5;
   const effectiveReturn = Math.round(realFromNominal(nominalReturn, inflation) * 100) / 100;
 
-  // Spend: profile > FIRE override > transaction-derived.
-  const derivedSpend = annualisedFlow(db, "expense");
+  // Spend is MANUAL (Profile, or the FIRE-setting fallback). No longer estimated
+  // from transactions — the spending table isn't the source of truth here.
   const annualSpend =
     profile.annualSpend != null && profile.annualSpend > 0
       ? profile.annualSpend
       : s.annualSpend != null && s.annualSpend > 0
         ? s.annualSpend
-        : derivedSpend;
-  const spendDerived =
-    !(profile.annualSpend != null && profile.annualSpend > 0) &&
-    !(s.annualSpend != null && s.annualSpend > 0);
+        : null;
+  const spendDerived = false; // always manual now
 
-  // Income → savings. Profile salaries are gross; convert to after-tax take-home
-  // and add employer super (SG) paid on TOP of salary, net of 15% contributions
-  // tax. Wealth built each year = (take-home − spend) discretionary PLUS net SG
-  // into super (both count toward net worth / the target).
+  // Auto: salaries → after-tax take-home, and employer super (SG) paid on TOP of
+  // salary, net of 15% contributions tax. These are the "unavoidable" flows.
   const taxed = (p: PersonProfile) => {
     const g = p.income || 0;
     if (g <= 0) return { gross: 0, net: 0, superNet: 0 };
@@ -349,14 +325,14 @@ export function computeFreedom(db: Database.Database): FreedomResult {
   const superContribNet = t1.superNet + t2.superNet;
   const incomeFromProfile = householdGross > 0;
 
-  // Take-home income (profile after-tax, or transaction-derived credits).
-  const annualIncome = incomeFromProfile ? householdNet : annualisedFlow(db, "income");
-  const discretionarySavings =
-    annualIncome != null && annualSpend != null ? annualIncome - annualSpend : null;
-  const annualSavings =
-    discretionarySavings != null
-      ? discretionarySavings + (incomeFromProfile ? superContribNet : 0)
-      : null;
+  // Take-home income (after tax), shown for context. Employer super still accrues
+  // automatically. But the amount actually INVESTED outside super each year is a
+  // MANUAL figure, not derived from income − spend.
+  const annualIncome = incomeFromProfile ? householdNet : null;
+  const annualInvest = profile.annualInvest != null && profile.annualInvest > 0 ? profile.annualInvest : 0;
+  const discretionarySavings = annualInvest; // outside-super, manual
+  // Total added to invested wealth each year = manual outside invest + net SG.
+  const annualSavings = annualInvest + (incomeFromProfile ? superContribNet : 0);
 
   const base: FreedomResult = {
     configured: false,
@@ -372,6 +348,7 @@ export function computeFreedom(db: Database.Database): FreedomResult {
     householdGross,
     householdNet,
     superContribNet,
+    annualInvest,
     discretionarySavings,
     fireTarget: null,
     targetFixed: false,
