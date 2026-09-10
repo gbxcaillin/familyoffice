@@ -121,6 +121,8 @@ interface ProjResult {
   yearsToFire: number | null;
   outsideAtRetire: number | null;
   superAtRetire: number | null;
+  propertyAtRetire: number | null;
+  propertyEnd: number;
   bridgeFailAge: number | null; // outside super ran out before preservation age
   depletionAge: number | null; // all accessible funds exhausted
   mortgageClearAge: number | null;
@@ -152,6 +154,7 @@ function projectScenario(sc: Scenario, strategy: Strategy): ProjResult {
   let depletionAge: number | null = null;
   let outsideAtRetire: number | null = null;
   let superAtRetire: number | null = null;
+  let propertyAtRetire: number | null = null;
   let mortgageClearAge: number | null = loan <= 0 ? startAge : null;
 
   // Pay off now from OUTSIDE super (accessible).
@@ -180,6 +183,7 @@ function projectScenario(sc: Scenario, strategy: Strategy): ProjResult {
     if (age === Math.floor(sc.retireAge)) {
       outsideAtRetire = out;
       superAtRetire = sup;
+      propertyAtRetire = homeEquity;
     }
 
     // Pay off at retirement — from outside first, then super if already unlocked.
@@ -241,6 +245,8 @@ function projectScenario(sc: Scenario, strategy: Strategy): ProjResult {
     yearsToFire,
     outsideAtRetire,
     superAtRetire,
+    propertyAtRetire,
+    propertyEnd: last ? last.home : 0,
     bridgeFailAge,
     depletionAge,
     mortgageClearAge,
@@ -368,8 +374,10 @@ export default function ScenarioLab() {
       value: bridgeValue,
       tone: !needsBridge ? undefined : result.bridgeFailAge == null ? "good" : "bad",
     },
-    { label: `Outside super at ${sc.retireAge}`, value: result.outsideAtRetire != null ? fmt0(result.outsideAtRetire) : "—" },
+    { label: `Investments at ${sc.retireAge}`, value: result.outsideAtRetire != null ? fmt0(result.outsideAtRetire) : "—" },
     { label: `Super at ${sc.retireAge}`, value: result.superAtRetire != null ? fmt0(result.superAtRetire) : "—" },
+    { label: `Property equity at ${sc.retireAge}`, value: result.propertyAtRetire != null ? fmt0(result.propertyAtRetire) : "—" },
+    { label: `Property equity at ${sc.longevity}`, value: fmt0(result.propertyEnd) },
     {
       label: "Money lasts",
       value: result.depletionAge == null ? `past age ${sc.longevity} ✓` : `until age ${result.depletionAge}`,
