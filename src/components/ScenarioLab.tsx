@@ -38,7 +38,7 @@ interface Baseline {
   mortgage: Mortgage;
 }
 
-type Strategy = "schedule" | "payoff_now" | "payoff_retire";
+type Strategy = "schedule" | "payoff_early" | "payoff_retire";
 
 interface Scenario {
   startOutside: number; // investable outside super (accessible any time)
@@ -61,6 +61,7 @@ interface Scenario {
   loanBalance: number;
   loanRate: number; // annual %
   annualRepayment: number;
+  extraMonthly: number; // additional monthly repayment (drives "pay off early")
   strategy: Strategy;
 }
 
@@ -157,14 +158,6 @@ function projectScenario(sc: Scenario, strategy: Strategy): ProjResult {
   let propertyAtRetire: number | null = null;
   let mortgageClearAge: number | null = loan <= 0 ? startAge : null;
 
-  // Pay off now from OUTSIDE super (accessible).
-  if (strategy === "payoff_now" && loan > 0) {
-    const pay = Math.min(loan, Math.max(0, out));
-    out -= pay;
-    loan -= pay;
-    if (loan <= 0) mortgageClearAge = startAge;
-  }
-
   const points: ProjResult["points"] = [];
 
   for (let age = startAge; age <= sc.longevity; age++) {
@@ -199,18 +192,27 @@ function projectScenario(sc: Scenario, strategy: Strategy): ProjResult {
     }
 
     const active = loan > 0;
+    const working = age < sc.retireAge;
+    // "Pay off early" adds extra repayments while working, clearing the loan
+    // sooner. The extra is money diverted from investing, so it's subtracted
+    // from the outside-super contribution below.
+    const extraMonthlyThisYear =
+      strategy === "payoff_early" && working && active ? Math.max(0, sc.extraMonthly) : 0;
+    const monthlyPay = monthlyRep + extraMonthlyThisYear;
     for (let m = 0; m < 12 && loan > 0; m++) {
       const interest = loan * mRate;
-      let pay = monthlyRep;
+      let pay = monthlyPay;
       if (pay > loan + interest) pay = loan + interest;
       loan = loan + interest - pay;
       if (loan < 0) loan = 0;
     }
     if (active && loan <= 0 && mortgageClearAge == null) mortgageClearAge = age;
 
-    if (age < sc.retireAge) {
-      // Working: discretionary → outside, employer super → super.
-      out = out * (1 + accR) + sc.savings + (active ? 0 : sc.annualRepayment);
+    if (working) {
+      // Working: discretionary → outside (less any extra repayments diverted to
+      // the mortgage); employer super → super. Once the loan clears, the base
+      // repayment frees up back into investing.
+      out = out * (1 + accR) + sc.savings - extraMonthlyThisYear * 12 + (active ? 0 : sc.annualRepayment);
       sup = sup * (1 + accR) + sc.superContrib;
     } else {
       const draw = sc.spend + (active ? sc.annualRepayment : 0);
@@ -257,7 +259,7 @@ function projectScenario(sc: Scenario, strategy: Strategy): ProjResult {
 
 const STRATEGY_LABELS: Record<Strategy, string> = {
   schedule: "Pay on schedule",
-  payoff_now: "Pay off now",
+  payoff_early: "Pay off early",
   payoff_retire: "Pay off at retirement",
 };
 
@@ -296,6 +298,7 @@ export default function ScenarioLab() {
       loanBalance: Math.round(b.mortgage.loanBalance),
       loanRate: b.mortgage.rate || 6,
       annualRepayment: Math.round(b.mortgage.annualRepayment),
+      extraMonthly: 0,
       strategy: "schedule",
     };
   }
@@ -313,7 +316,7 @@ export default function ScenarioLab() {
   const result = useMemo(() => (sc ? projectScenario(sc, sc.strategy) : null), [sc]);
   const comparison = useMemo(() => {
     if (!sc || !sc.loanBalance) return null;
-    return (["schedule", "payoff_now", "payoff_retire"] as Strategy[]).map((s) => ({
+    return (["schedule", "payoff_early", "payoff_retire"] as Strategy[]).map((s) => ({
       strategy: s,
       res: projectScenario(sc, s),
     }));
@@ -477,11 +480,15 @@ export default function ScenarioLab() {
               <InfoTip label="Mortgage strategy">
                 <p className="mb-2">
                   <strong>Pay on schedule</strong> keeps cash invested and pays the loan with its normal
-                  repayments (from savings while working, from the portfolio in retirement).
+                  repayments.
                 </p>
                 <p className="mb-2">
-                  <strong>Pay off now / at retirement</strong> clears the loan with a lump from your outside-super
-                  assets — a hit to accessible capital, but it stops the repayments and interest.
+                  <strong>Pay off early</strong> adds the extra monthly repayment below — the loan clears
+                  sooner and saves interest, but you invest less while paying it down.
+                </p>
+                <p className="mb-2">
+                  <strong>Pay off at retirement</strong> clears whatever&apos;s left with a lump from your
+                  outside-super assets at the retirement age.
                 </p>
                 <p>The table shows how each choice changes the bridge and how long the money lasts.</p>
               </InfoTip>
@@ -542,6 +549,37 @@ export default function ScenarioLab() {
             <div>
               <label className={labelClass}>Annual repayment</label>
               <input className={inputClass} type="number" value={sc.annualRepayment} onChange={(e) => set({ annualRepayment: parseFloat(e.target.value) || 0 })} />
+            </div>
+            <div>
+              <label className={`${labelClass} flex items-center gap-1.5`}>
+                Additional repayment / month
+                <InfoTip label="Additional monthly repayment">
+                  <p className="mb-2">
+                    Extra paid on the mortgage each month, on top of the normal repayment. It clears
+                    the loan sooner and saves interest — this is the &ldquo;pay off early&rdquo; lever.
+                  </p>
+                  <p>
+                    The extra comes out of what you&apos;d otherwise invest outside super while
+                    working; once the loan is gone, the freed repayment goes back to investing.
+                    Setting this switches the strategy to Pay off early.
+                  </p>
+                </InfoTip>
+              </label>
+              <div className="flex items-center gap-1">
+                <span className="text-sm text-gbx-muted font-data">$</span>
+                <input
+                  className={inputClass}
+                  type="number"
+                  value={sc.extraMonthly}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value) || 0;
+                    set({
+                      extraMonthly: v,
+                      strategy: v > 0 ? "payoff_early" : sc.strategy === "payoff_early" ? "schedule" : sc.strategy,
+                    });
+                  }}
+                />
+              </div>
             </div>
             <Slider label="Loan interest rate" value={sc.loanRate} min={0} max={12} step={0.1} onChange={(v) => set({ loanRate: v })} suffix="%"
               info="The mortgage's annual interest rate. Higher rates mean more of each repayment goes to interest, so the loan takes longer to clear and 'pay off early' saves more." />
