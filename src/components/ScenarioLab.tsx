@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   Area,
-  Line,
   ComposedChart,
   XAxis,
   YAxis,
@@ -117,7 +116,7 @@ function Slider({
 
 interface ProjResult {
   target: number;
-  points: { age: number; outside: number; super: number; netWorth: number }[];
+  points: { age: number; outside: number; super: number; home: number; netWorth: number }[];
   fireAge: number | null;
   yearsToFire: number | null;
   outsideAtRetire: number | null;
@@ -172,6 +171,7 @@ function projectScenario(sc: Scenario, strategy: Strategy): ProjResult {
       age,
       outside: Math.round(Math.max(0, out)),
       super: Math.round(Math.max(0, sup)),
+      home: Math.round(Math.max(0, homeEquity)),
       netWorth: Math.round(netWorth),
     });
 
@@ -452,9 +452,10 @@ export default function ScenarioLab() {
             {needsBridge && (
               <ReferenceLine x={sc.preservationAge} stroke="#2E8B6E" strokeDasharray="2 2" label={{ value: "super", position: "top", fontSize: 10, fill: "#2E8B6E" }} />
             )}
-            <Area type="monotone" dataKey="outside" stackId="1" name="Outside super" stroke="#2E8B6E" strokeWidth={1.5} fill="#2E8B6E" fillOpacity={0.28} />
-            <Area type="monotone" dataKey="super" stackId="1" name="Super" stroke="#C68A2E" strokeWidth={1.5} fill="#C68A2E" fillOpacity={0.28} />
-            <Line type="monotone" dataKey="netWorth" name="Net worth" stroke="#1A5C4A" strokeWidth={2} dot={false} />
+            {/* Stacked: Investments + Super + Property = net worth (the stack top) */}
+            <Area type="monotone" dataKey="outside" stackId="1" name="Investments" stroke="#2E8B6E" strokeWidth={1.5} fill="#2E8B6E" fillOpacity={0.3} />
+            <Area type="monotone" dataKey="super" stackId="1" name="Super" stroke="#C68A2E" strokeWidth={1.5} fill="#C68A2E" fillOpacity={0.3} />
+            <Area type="monotone" dataKey="home" stackId="1" name="Property (equity)" stroke="#6E7B8B" strokeWidth={1.5} fill="#6E7B8B" fillOpacity={0.3} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
