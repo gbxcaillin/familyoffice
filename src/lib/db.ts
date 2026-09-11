@@ -175,6 +175,18 @@ function initSchema(db: Database.Database) {
       value TEXT NOT NULL,
       updated_at TEXT DEFAULT (datetime('now'))
     );
+
+    -- Planned budget lines: a monthly planned amount per category, tagged
+    -- essential vs discretionary. Actuals are read from transactions at query
+    -- time, so this table is just the plan.
+    CREATE TABLE IF NOT EXISTS budgets (
+      id TEXT PRIMARY KEY,
+      category TEXT NOT NULL,
+      monthly REAL NOT NULL DEFAULT 0,
+      essential INTEGER NOT NULL DEFAULT 0,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // Loan metadata columns, added after the original release.
