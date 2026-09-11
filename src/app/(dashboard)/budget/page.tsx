@@ -33,17 +33,30 @@ function Stat({ label, value, tone, sub }: { label: string; value: string; tone?
 
 export default function BudgetPage() {
   const [lines, setLines] = useState<Line[]>([]);
+  const [order, setOrder] = useState<string[]>([]); // display order, re-sorted on blur/toggle
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [newCat, setNewCat] = useState("");
   const [newAmt, setNewAmt] = useState("");
   const [newEssential, setNewEssential] = useState(true);
 
+  // Essentials first (highest monthly → lowest), then discretionary (same).
+  const sortedIds = (ls: Line[]): string[] =>
+    [...ls]
+      .sort((a, b) => (a.essential !== b.essential ? (a.essential ? -1 : 1) : b.monthly - a.monthly))
+      .map((l) => l.id);
+  const resort = (ls: Line[]) => setOrder(sortedIds(ls));
+
   const load = useCallback(() => {
     fetch("/api/budget")
       .then((r) => r.json())
       .then((d) => {
         setLines(d.lines || []);
+        setOrder(
+          [...(d.lines || [])]
+            .sort((a: Line, b: Line) => (a.essential !== b.essential ? (a.essential ? -1 : 1) : b.monthly - a.monthly))
+            .map((l: Line) => l.id)
+        );
         setCategories(d.categories || []);
       })
       .finally(() => setLoading(false));
@@ -82,7 +95,14 @@ export default function BudgetPage() {
   async function remove(id: string) {
     await fetch(`/api/budget?id=${id}`, { method: "DELETE" });
     setLines((ls) => ls.filter((l) => l.id !== id));
+    setOrder((o) => o.filter((x) => x !== id));
   }
+
+  // Rows in display order, with any not-yet-ordered lines appended.
+  const displayLines: Line[] = [
+    ...order.map((id) => lines.find((l) => l.id === id)).filter((l): l is Line => !!l),
+    ...lines.filter((l) => !order.includes(l.id)),
+  ];
 
   // Live totals from local state.
   const monthly = lines.reduce((s, l) => s + (l.monthly || 0), 0);
@@ -156,7 +176,7 @@ export default function BudgetPage() {
                 </td>
               </tr>
             )}
-            {lines.map((l) => {
+            {displayLines.map((l) => {
               const remaining = l.monthly - l.actualThisMonth;
               const over = l.actualThisMonth > l.monthly && l.monthly > 0;
               return (
@@ -175,7 +195,9 @@ export default function BudgetPage() {
                       type="checkbox"
                       checked={l.essential}
                       onChange={(e) => {
-                        patchLocal(l.id, { essential: e.target.checked });
+                        const next = lines.map((x) => (x.id === l.id ? { ...x, essential: e.target.checked } : x));
+                        setLines(next);
+                        resort(next);
                         persist(l.id, { essential: e.target.checked });
                       }}
                     />
@@ -190,7 +212,13 @@ export default function BudgetPage() {
                         className="w-24 text-right bg-white border border-gbx-border px-2 py-2 text-sm font-data text-gbx-charcoal tabular-nums focus:outline-none focus:border-gbx-teal"
                         value={l.monthly === 0 ? "" : l.monthly}
                         onChange={(e) => patchLocal(l.id, { monthly: e.target.value === "" ? 0 : parseFloat(e.target.value) || 0 })}
-                        onBlur={(e) => persist(l.id, { monthly: e.target.value === "" ? 0 : parseFloat(e.target.value) || 0 })}
+                        onBlur={(e) => {
+                          const v = e.target.value === "" ? 0 : parseFloat(e.target.value) || 0;
+                          const next = lines.map((x) => (x.id === l.id ? { ...x, monthly: v } : x));
+                          setLines(next);
+                          resort(next);
+                          persist(l.id, { monthly: v });
+                        }}
                       />
                     </div>
                   </td>
