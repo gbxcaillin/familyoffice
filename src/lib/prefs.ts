@@ -16,6 +16,7 @@ export const DEFAULT_PREFS: LayoutPrefs = {
     "holdings",
     "super",
     "fire",
+    "budget",
     "spending",
     "import",
     "profile",
