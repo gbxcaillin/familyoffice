@@ -55,6 +55,30 @@ Put the resulting `$2b$12$...` strings into `.env.production` as
 `USER1_PASSWORD_HASH` / `USER2_PASSWORD_HASH`. Use strong, unique passwords —
 this will be on the public internet.
 
+## "Ask your money" assistant (Claude subscription)
+
+The **Ask** tab runs the Claude Agent SDK against your **Claude subscription**
+(Pro/Max) — not the metered API, so there is no per-token bill. Set it up once:
+
+```bash
+# On any machine signed into your Claude plan (your laptop is fine):
+npx @anthropic-ai/claude-code setup-token
+# Complete the browser login; it prints a long-lived OAuth token.
+```
+
+Paste that token into `.env.production` as `CLAUDE_CODE_OAUTH_TOKEN`, then
+`docker compose up -d --build`. Notes:
+
+- **Leave `ANTHROPIC_API_KEY` unset.** If present it takes priority and would
+  bill per token instead of using the subscription.
+- The token is long-lived; if the Ask tab starts reporting it isn't configured,
+  re-run `setup-token` and update `.env.production`.
+- The Agent SDK spawns a bundled `claude` binary; the Docker image already
+  traces it in and gives it a writable home (`/home/app/.claude`). Nothing else
+  to install.
+- Until the token is set, the Ask tab shows a "not configured" notice; the rest
+  of the app is unaffected.
+
 ## DNS (VentraIP VIPControl)
 
 Add one record to the gbxps.com zone:

@@ -113,8 +113,8 @@ export default function AskPage() {
               your data to answer — it can never change anything.
             </p>
             <p>
-              Your question and the query results are sent to the Claude API to compute the answer.
-              Nothing is stored there.
+              Runs on the Claude Agent SDK against your Claude subscription — your question and the
+              query results are sent to Claude to compute the answer, and nothing is stored there.
             </p>
           </InfoTip>
         </h1>
@@ -125,8 +125,10 @@ export default function AskPage() {
 
       {configured === false && (
         <div className="bg-amber-50 border border-amber-200 text-amber-800 text-sm font-body p-4">
-          The assistant isn&apos;t configured yet. Set <code className="font-data">ANTHROPIC_API_KEY</code>{" "}
-          in the server environment and restart the app.
+          The assistant isn&apos;t configured yet. Set{" "}
+          <code className="font-data">CLAUDE_CODE_OAUTH_TOKEN</code> (from{" "}
+          <code className="font-data">claude setup-token</code>) in the server environment and restart
+          the app.
         </div>
       )}
 
@@ -217,7 +219,7 @@ export default function AskPage() {
             }}
             rows={1}
             placeholder={
-              configured === false ? "Configure ANTHROPIC_API_KEY to enable…" : "Ask about your finances…"
+              configured === false ? "Set CLAUDE_CODE_OAUTH_TOKEN to enable…" : "Ask about your finances…"
             }
             disabled={busy || configured === false}
             className="flex-1 resize-none bg-white border border-gbx-border px-3 py-2.5 text-sm font-body text-gbx-charcoal focus:outline-none focus:border-gbx-teal transition-colors disabled:opacity-50"

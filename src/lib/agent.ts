@@ -1,23 +1,31 @@
-import Anthropic from "@anthropic-ai/sdk";
+import { query, tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
+import { z } from "zod";
 import Database from "better-sqlite3";
 import path from "path";
 
 // ---------------------------------------------------------------------------
-// "Ask your money" — a small tool-using agent that answers natural-language
-// questions about the household finances by writing and running its own
-// READ-ONLY SQL against the app's SQLite database.
+// "Ask your money" — a tool-using agent that answers natural-language questions
+// about the household finances by writing and running its own READ-ONLY SQL.
 //
-// Safety model, in layers:
+// This runs on the Claude Agent SDK against the household's Claude subscription
+// (via CLAUDE_CODE_OAUTH_TOKEN), NOT the pay-per-token API. The agent's ONLY
+// tool is run_sql; every built-in tool (file/bash/web) is disabled, and any
+// tool call that isn't the pre-approved run_sql is denied without prompting.
+//
+// Safety, in layers:
 //   1. A dedicated connection opened readonly — SQLite itself rejects writes.
 //   2. A statement guard — only a single SELECT / WITH … SELECT is allowed.
-//   3. A hard row cap so a broad query can't blow the token budget.
-// The model never touches the filesystem or shell; its only tool is run_sql.
+//   3. A hard row cap so a broad query can't blow the context budget.
 // ---------------------------------------------------------------------------
 
 const DB_PATH = path.join(process.cwd(), "data", "familyoffice.db");
-const MODEL = process.env.AGENT_MODEL || "claude-sonnet-5";
+// Leave undefined to use the subscription's default model. Set AGENT_MODEL to
+// pin one (e.g. "claude-sonnet-5") if the plan allows it.
+const MODEL = process.env.AGENT_MODEL || undefined;
 const MAX_ROWS = 500;
-const MAX_TURNS = 6;
+const MAX_TURNS = 8;
+const SERVER_NAME = "familyoffice";
+const TOOL_FQN = `mcp__${SERVER_NAME}__run_sql`;
 
 let roDb: Database.Database | undefined;
 
@@ -57,12 +65,7 @@ function runReadonlySql(raw: string): SqlResult {
   const all = stmt.raw().all() as unknown[][];
   const columns = stmt.columns().map((c) => c.name);
   const truncated = all.length > MAX_ROWS;
-  return {
-    columns,
-    rows: all.slice(0, MAX_ROWS),
-    rowCount: all.length,
-    truncated,
-  };
+  return { columns, rows: all.slice(0, MAX_ROWS), rowCount: all.length, truncated };
 }
 
 // A compact, always-accurate schema summary built from the live database, plus
@@ -102,16 +105,15 @@ Reading notes (how the app interprets this data):
 - super_config / super_price_history cover superannuation balances and unit-price history.
 - budgets is the planned monthly budget per category (monthly, essential=1/0). Actual spend
   comes from transactions, not this table.
-- app_settings holds JSON blobs: key 'fire' = Freedom Number/FIRE assumptions
-  (targetOverride is the $ target, includeHome, birthP1/birthP2 = birth months), key
-  'profile' = per-person income/super/risk. Parse the JSON in the 'value' column mentally;
-  you cannot use JSON functions reliably, so just read the value text.
+- app_settings holds JSON blobs in the 'value' column: key 'fire' = Freedom Number/FIRE
+  assumptions (targetOverride is the $ target, includeHome, birthP1/birthP2 = birth months),
+  key 'profile' = per-person income/super/risk. Read the JSON text from the value column.
 `.trim();
 
-function buildSystem(schema: string, today: string): string {
+function buildSystemPrompt(schema: string, today: string): string {
   return `You are the analyst for a private two-person Australian family-office net-worth dashboard (the users are Caillin and Kirra). You answer questions about their own finances.
 
-You have ONE tool: run_sql, which runs a single read-only SELECT against their SQLite database and returns the rows. Query the database to ground every factual answer — never guess at figures. You may call run_sql several times to build up an answer (e.g. explore the schema, then compute).
+You have ONE tool: ${TOOL_FQN}, which runs a single read-only SQL SELECT against their SQLite database and returns the rows. Query the database to ground every factual answer — never guess at figures. You may call the tool several times to build up an answer (e.g. explore the schema, then compute).
 
 Database tables and columns:
 ${schema}
@@ -123,25 +125,9 @@ Answering style:
 - Format money as AUD with thousands separators (e.g. $1,234,567). Round sensibly.
 - If a question is ambiguous, make the most reasonable assumption and state it briefly.
 - If the data needed isn't there, say so plainly rather than inventing it.
-- Never run anything other than SELECT queries. You cannot change any data.
+- Never attempt anything other than SELECT queries; you cannot change any data.
 - Today's date is ${today}.`;
 }
-
-const TOOL: Anthropic.Tool = {
-  name: "run_sql",
-  description:
-    "Run a single read-only SQL SELECT query against the family-office SQLite database and get the resulting rows back. Only SELECT / WITH…SELECT statements are permitted.",
-  input_schema: {
-    type: "object",
-    properties: {
-      sql: {
-        type: "string",
-        description: "A single SQLite SELECT statement (no trailing semicolon needed).",
-      },
-    },
-    required: ["sql"],
-  },
-};
 
 export interface AskTurn {
   role: "user" | "assistant";
@@ -153,86 +139,114 @@ export interface AskResult {
   queries: { sql: string; rowCount?: number; error?: string }[];
 }
 
+// Subscription auth: the Agent SDK reads CLAUDE_CODE_OAUTH_TOKEN (from
+// `claude setup-token`). We treat the token's presence as "configured".
 export function agentConfigured(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY);
+  return Boolean(process.env.CLAUDE_CODE_OAUTH_TOKEN);
 }
 
 export async function askMoney(question: string, history: AskTurn[] = []): Promise<AskResult> {
   if (!agentConfigured()) {
     throw new Error(
-      "The assistant isn't configured. Set ANTHROPIC_API_KEY in the server environment."
+      "The assistant isn't configured. Set CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) in the server environment."
     );
   }
 
-  const client = new Anthropic(); // reads ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL
-  const system = buildSystem(schemaSummary(), new Date().toISOString().slice(0, 10));
-
-  // Seed with prior plain-text turns so follow-up questions have context.
-  const messages: Anthropic.MessageParam[] = [
-    ...history
-      .filter((t) => t.content?.trim())
-      .map((t) => ({ role: t.role, content: t.content })),
-    { role: "user" as const, content: question },
-  ];
-
   const queries: AskResult["queries"] = [];
 
-  for (let turn = 0; turn < MAX_TURNS; turn++) {
-    const resp = await client.messages.create({
-      model: MODEL,
-      max_tokens: 1500,
-      system,
-      tools: [TOOL],
-      messages,
-    });
-
-    if (resp.stop_reason === "tool_use") {
-      messages.push({ role: "assistant", content: resp.content });
-      const results: Anthropic.ToolResultBlockParam[] = [];
-      for (const block of resp.content) {
-        if (block.type !== "tool_use" || block.name !== "run_sql") continue;
-        const sql = String((block.input as { sql?: string })?.sql ?? "");
-        try {
-          const r = runReadonlySql(sql);
-          queries.push({ sql, rowCount: r.rowCount });
-          const payload = {
-            columns: r.columns,
-            rows: r.rows,
-            rowCount: r.rowCount,
-            note: r.truncated ? `Showing first ${MAX_ROWS} of ${r.rowCount} rows.` : undefined,
-          };
-          results.push({
-            type: "tool_result",
-            tool_use_id: block.id,
-            content: JSON.stringify(payload),
-          });
-        } catch (e) {
-          const message = e instanceof Error ? e.message : String(e);
-          queries.push({ sql, error: message });
-          results.push({
-            type: "tool_result",
-            tool_use_id: block.id,
-            content: `Error: ${message}`,
-            is_error: true,
-          });
-        }
+  // One in-process tool: read-only SQL. The handler records each query so the
+  // UI can show exactly what ran.
+  const runSql = tool(
+    "run_sql",
+    "Run a single read-only SQL SELECT query against the family-office SQLite database and get the resulting rows back. Only SELECT / WITH…SELECT statements are permitted.",
+    { sql: z.string().describe("A single SQLite SELECT statement (no trailing semicolon).") },
+    async (args: { sql: string }) => {
+      const sql = String(args.sql ?? "");
+      try {
+        const r = runReadonlySql(sql);
+        queries.push({ sql, rowCount: r.rowCount });
+        const payload = {
+          columns: r.columns,
+          rows: r.rows,
+          rowCount: r.rowCount,
+          note: r.truncated ? `Showing first ${MAX_ROWS} of ${r.rowCount} rows.` : undefined,
+        };
+        return { content: [{ type: "text" as const, text: JSON.stringify(payload) }] };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        queries.push({ sql, error: message });
+        return {
+          content: [{ type: "text" as const, text: `Error: ${message}` }],
+          isError: true,
+        };
       }
-      messages.push({ role: "user", content: results });
-      continue;
-    }
+    },
+    { annotations: { readOnlyHint: true } }
+  );
 
-    // Final answer.
-    const answer = resp.content
-      .filter((b): b is Anthropic.TextBlock => b.type === "text")
-      .map((b) => b.text)
-      .join("\n")
-      .trim();
-    return { answer: answer || "I couldn't find an answer to that.", queries };
+  const server = createSdkMcpServer({
+    name: SERVER_NAME,
+    version: "1.0.0",
+    tools: [runSql],
+  });
+
+  // Fold prior turns into a single prompt so follow-ups have context. (The SDK
+  // takes a string prompt; we prepend a short transcript.)
+  const priorTranscript = history
+    .filter((t) => t.content?.trim())
+    .map((t) => `${t.role === "user" ? "User" : "Assistant"}: ${t.content}`)
+    .join("\n");
+  const prompt = priorTranscript
+    ? `${priorTranscript}\n\nUser: ${question}`
+    : question;
+
+  const result = query({
+    prompt,
+    options: {
+      model: MODEL,
+      systemPrompt: buildSystemPrompt(schemaSummary(), new Date().toISOString().slice(0, 10)),
+      mcpServers: { [SERVER_NAME]: server },
+      allowedTools: [TOOL_FQN],
+      // Strip built-in tools from context; run_sql is the only capability.
+      disallowedTools: [
+        "Bash",
+        "Read",
+        "Write",
+        "Edit",
+        "MultiEdit",
+        "NotebookEdit",
+        "Glob",
+        "Grep",
+        "WebSearch",
+        "WebFetch",
+        "Task",
+        "TodoWrite",
+      ],
+      // Deny anything not pre-approved, and never block on an interactive prompt.
+      permissionMode: "dontAsk",
+      // SDK isolation: don't load ~/.claude, project .claude, or CLAUDE.md.
+      settingSources: [],
+      maxTurns: MAX_TURNS,
+      // Force subscription auth: strip any API key from the subprocess env so
+      // CLAUDE_CODE_OAUTH_TOKEN is used (API key would otherwise take priority).
+      env: { ...process.env, ANTHROPIC_API_KEY: undefined },
+    },
+  });
+
+  let answer = "";
+  for await (const message of result) {
+    if (message.type === "result") {
+      if (message.subtype === "success") {
+        answer = message.result?.trim() || "";
+      } else {
+        throw new Error(
+          message.subtype === "error_max_turns"
+            ? "That took more steps than I could complete in one go — try narrowing the question."
+            : "The assistant couldn't complete that request."
+        );
+      }
+    }
   }
 
-  return {
-    answer:
-      "That took more steps than I could complete in one go — try narrowing the question.",
-    queries,
-  };
+  return { answer: answer || "I couldn't find an answer to that.", queries };
 }
