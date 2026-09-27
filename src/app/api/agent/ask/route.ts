@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { askMoney, agentConfigured, type AskTurn } from "@/lib/agent";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function GET() {
   // Lets the UI show a helpful setup notice instead of failing on first ask.
@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          "The assistant isn't configured. Add ANTHROPIC_API_KEY to the server environment and restart.",
+          "The assistant isn't configured. Add CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) to the server environment and restart.",
       },
       { status: 503 }
     );
