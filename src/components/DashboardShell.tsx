@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 const TAB_DEFS: Record<string, { name: string; href: string }> = {
   dashboard: { name: "Dashboard", href: "/" },
+  ask: { name: "Ask", href: "/ask" },
   accounts: { name: "Accounts", href: "/accounts" },
   holdings: { name: "Holdings", href: "/holdings" },
   super: { name: "Super", href: "/super" },
@@ -17,6 +18,7 @@ const TAB_DEFS: Record<string, { name: string; href: string }> = {
 
 const DEFAULT_TAB_ORDER = [
   "dashboard",
+  "ask",
   "accounts",
   "holdings",
   "super",
