@@ -15,6 +15,7 @@ interface LayoutPrefs {
 const LABELS: Record<string, Record<string, string>> = {
   tabOrder: {
     dashboard: "Dashboard",
+    ask: "Ask",
     accounts: "Accounts",
     holdings: "Holdings",
     super: "Super",

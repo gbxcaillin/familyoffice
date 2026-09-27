@@ -12,6 +12,7 @@ export interface LayoutPrefs {
 export const DEFAULT_PREFS: LayoutPrefs = {
   tabOrder: [
     "dashboard",
+    "ask",
     "accounts",
     "holdings",
     "super",
