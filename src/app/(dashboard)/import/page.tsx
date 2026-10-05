@@ -79,6 +79,7 @@ export default function ImportPage() {
   const [claudeReading, setClaudeReading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [canOverwrite, setCanOverwrite] = useState(false);
 
   useEffect(() => {
     fetch("/api/accounts").then((r) => r.json()).then(setAccounts);
@@ -95,6 +96,7 @@ export default function ImportPage() {
     setUsMarket(false);
     setError("");
     setCanOverride(false);
+    setCanOverwrite(false);
     setMessage(null);
   }
 
@@ -204,10 +206,11 @@ export default function ImportPage() {
     }
   }
 
-  async function handleImport() {
+  async function handleImport(overwrite = false) {
     if (!result || !accountId) return;
     setImporting(true);
     setMessage(null);
+    setCanOverwrite(false);
     try {
       let res: Response;
       if (result.kind === "transactions") {
@@ -249,6 +252,7 @@ export default function ImportPage() {
               cost_basis: r.price,
             })),
             cash: result.cash ?? null,
+            overwrite,
           }),
         });
       }
@@ -274,16 +278,26 @@ export default function ImportPage() {
           : `Import failed: nothing was added to this account — all ${data.skipped || 0} row(s) were skipped (already imported, or missing a buy/sell side, units or price). Nothing changed.`;
       } else {
         const changed = (data.imported || 0) + (data.updated || 0) + (data.reconciled || 0);
-        ok = changed > 0;
-        msg = ok
-          ? `Imported ${data.imported} new holdings, updated ${data.updated}.${
-              data.reconciled
-                ? ` Reconciled ${data.reconciled} traded position${data.reconciled !== 1 ? "s" : ""} to the statement units, keeping the trade cost basis.`
-                : data.imported
-                  ? " Cost basis seeded from the statement — edit a holding to set the real entry price."
-                  : ""
-            }`
-          : `Import failed: nothing was added — ${data.skipped || 0} row(s) skipped. Check you picked the right account in "Into account", and that each row has units above zero.`;
+        if (changed > 0) {
+          ok = true;
+          msg = `Imported ${data.imported} new holdings, updated ${data.updated}.${
+            data.reconciled
+              ? ` Reconciled ${data.reconciled} traded position${data.reconciled !== 1 ? "s" : ""} to the statement units, keeping the trade cost basis.`
+              : data.imported
+                ? " Cost basis seeded from the statement — edit a holding to set the real entry price."
+                : ""
+          }`;
+        } else if ((data.tracked || 0) > 0) {
+          // Not a failure: these tickers already exist in this account from a
+          // trades import, so they're on the Holdings tab already. Offer to make
+          // the valuation authoritative if those figures are wrong.
+          ok = false;
+          setCanOverwrite(true);
+          msg = `These ${data.tracked} position${data.tracked !== 1 ? "s are" : " is"} already in this account from a trade/order import — open the Holdings tab to see them. If those figures are wrong, use “Overwrite with these figures” below to make this statement the source of truth.`;
+        } else {
+          ok = false;
+          msg = `Import failed: nothing was added — ${data.skipped || 0} row(s) skipped. Check you picked the right account in "Into account", and that each row has units above zero.`;
+        }
       }
 
       // Only archive the file and clear the preview on a real change; a no-op
@@ -391,6 +405,15 @@ export default function ImportPage() {
             {message}
           </p>
         )}
+        {canOverwrite && (
+          <button
+            onClick={() => handleImport(true)}
+            disabled={importing}
+            className="px-4 py-2 bg-gbx-teal text-white text-[11px] uppercase tracking-[0.12em] font-body font-medium hover:bg-gbx-deep-teal transition-colors disabled:opacity-50"
+          >
+            {importing ? "Overwriting…" : "Overwrite with these figures"}
+          </button>
+        )}
       </div>
 
       {result && (
@@ -440,7 +463,7 @@ export default function ImportPage() {
                 Keep a copy in Documents
               </label>
               <button
-                onClick={handleImport}
+                onClick={() => handleImport()}
                 disabled={importing || !accountId || includedCount === 0}
                 className="px-4 py-2 bg-gbx-teal text-white text-xs uppercase tracking-[0.15em] font-body font-medium hover:bg-gbx-deep-teal transition-colors disabled:opacity-50"
               >

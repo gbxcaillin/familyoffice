@@ -14,10 +14,11 @@ interface IncomingHolding {
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { account_id, holdings, cash } = body as {
+  const { account_id, holdings, cash, overwrite } = body as {
     account_id: string;
     holdings: IncomingHolding[];
     cash?: number | null;
+    overwrite?: boolean; // make the valuation authoritative even if trades exist
   };
 
   if (!account_id || !Array.isArray(holdings) || holdings.length === 0) {
@@ -59,8 +60,10 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      if (accountHasTrades(db, account_id, ticker)) {
-        // Trades own the cost basis; remember the valuation units to top up to.
+      // Normally trades own the cost basis, so a valuation only tops up units.
+      // With `overwrite`, the user is making this statement authoritative, so we
+      // set units/cost directly instead (the insert/update path below).
+      if (!overwrite && accountHasTrades(db, account_id, ticker)) {
         reconcileTargets.set(ticker, h.units);
         continue;
       }
@@ -137,5 +140,11 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ imported, updated, reconciled, skipped });
+  return NextResponse.json({
+    imported,
+    updated,
+    reconciled,
+    skipped,
+    tracked: reconcileTargets.size, // rows already covered by existing trades
+  });
 }
