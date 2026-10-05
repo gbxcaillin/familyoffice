@@ -8,6 +8,7 @@ const nextConfig: NextConfig = {
     "better-sqlite3",
     "pdf-parse",
     "@anthropic-ai/claude-agent-sdk",
+    "nodemailer",
   ],
   // The standalone runtime image only contains files Next traced. The Agent SDK
   // spawns a native `claude` binary shipped as a platform-specific sibling

@@ -187,6 +187,22 @@ function initSchema(db: Database.Database) {
       sort_order INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     );
+
+    -- Log of times the app fell back to Claude because the deterministic code
+    -- couldn't handle something (e.g. an unrecognised import). Each row is a
+    -- signal to improve the underlying parser; a copy is emailed to the owner.
+    CREATE TABLE IF NOT EXISTS agent_reports (
+      id TEXT PRIMARY KEY,
+      feature TEXT NOT NULL,
+      file_name TEXT,
+      detect_error TEXT,
+      result_kind TEXT,
+      row_count INTEGER,
+      note TEXT,
+      sample TEXT,
+      emailed INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
   `);
 
   // Loan metadata columns, added after the original release.
