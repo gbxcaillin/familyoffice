@@ -101,6 +101,18 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
 }
 
+interface AgentReport {
+  id: string;
+  feature: string;
+  file_name: string | null;
+  detect_error: string | null;
+  result_kind: string | null;
+  row_count: number | null;
+  note: string | null;
+  sample: string | null;
+  created_at: string;
+}
+
 export default function SettingsPage() {
   const [prefs, setPrefs] = useState<LayoutPrefs | null>(null);
   // Labels for the dynamic (account-id) groups, filled from the account lists.
@@ -118,6 +130,27 @@ export default function SettingsPage() {
 
   const [backfilling, setBackfilling] = useState(false);
   const [backfillMsg, setBackfillMsg] = useState<string | null>(null);
+
+  const [reports, setReports] = useState<AgentReport[]>([]);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function loadReports() {
+    fetch("/api/agent/reports")
+      .then((r) => r.json())
+      .then((d) => setReports(d.reports || []))
+      .catch(() => {});
+  }
+  async function clearReports() {
+    await fetch("/api/agent/reports", { method: "DELETE" });
+    setReports([]);
+  }
+  async function deleteReport(id: string) {
+    await fetch(`/api/agent/reports?id=${id}`, { method: "DELETE" });
+    setReports((r) => r.filter((x) => x.id !== id));
+  }
+  useEffect(() => {
+    loadReports();
+  }, []);
 
   async function handleBackfill() {
     setBackfilling(true);
@@ -409,6 +442,102 @@ export default function SettingsPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Admin — Assist log: when the app had to fall back to Claude */}
+      <div className="bg-white border border-gbx-border p-4 sm:p-6">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h2 className="text-[10px] uppercase tracking-[0.15em] font-body font-medium text-gbx-teal">
+              Assist log (admin)
+            </h2>
+            <p className="text-[11px] text-gbx-muted font-body mt-1 max-w-xl">
+              Times the app couldn&apos;t handle something and Claude stepped in (e.g. an
+              unrecognised import). Each entry is a hint to improve the underlying code so
+              Claude isn&apos;t needed next time.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={loadReports}
+              className="px-3 py-2 text-[11px] uppercase tracking-[0.12em] font-body font-medium border border-gbx-border text-gbx-muted hover:text-gbx-charcoal hover:border-gbx-teal transition-colors"
+            >
+              Refresh
+            </button>
+            {reports.length > 0 && (
+              <button
+                onClick={clearReports}
+                className="px-3 py-2 text-[11px] uppercase tracking-[0.12em] font-body font-medium border border-gbx-border text-gbx-muted hover:text-red-600 hover:border-red-400 transition-colors"
+              >
+                Clear log
+              </button>
+            )}
+          </div>
+        </div>
+
+        {reports.length === 0 ? (
+          <p className="text-sm text-gbx-muted font-body mt-4">
+            Nothing logged — the built-in code has handled everything so far.
+          </p>
+        ) : (
+          <div className="mt-4 space-y-2">
+            {reports.map((r) => (
+              <div key={r.id} className="border border-gbx-border bg-gbx-soft/40">
+                <div className="flex items-start justify-between gap-3 px-3 py-2.5">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[10px] uppercase tracking-[0.12em] font-body font-medium bg-gbx-teal/10 text-gbx-teal px-1.5 py-0.5">
+                        {r.feature}
+                      </span>
+                      <span className="text-sm font-body text-gbx-charcoal truncate">
+                        {r.file_name || "(no file)"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gbx-muted font-body mt-1">
+                      {new Date(r.created_at + "Z").toLocaleString("en-AU")} · read as{" "}
+                      {r.result_kind || "?"} · {r.row_count ?? 0} rows
+                    </p>
+                    {r.detect_error && (
+                      <p className="text-[11px] text-red-600 font-body mt-1">
+                        Auto-detect: {r.detect_error}
+                      </p>
+                    )}
+                    {r.note && (
+                      <p className="text-[11px] text-gbx-muted font-body mt-1">Note: {r.note}</p>
+                    )}
+                    {r.sample && (
+                      <button
+                        onClick={() =>
+                          setExpanded((s) => {
+                            const n = new Set(s);
+                            if (n.has(r.id)) n.delete(r.id);
+                            else n.add(r.id);
+                            return n;
+                          })
+                        }
+                        className="text-[11px] uppercase tracking-[0.1em] font-body text-gbx-teal hover:text-gbx-deep-teal mt-1"
+                      >
+                        {expanded.has(r.id) ? "Hide" : "Show"} file sample
+                      </button>
+                    )}
+                    {expanded.has(r.id) && r.sample && (
+                      <pre className="mt-2 text-[11px] font-data text-gbx-charcoal bg-white border border-gbx-border p-2 overflow-x-auto whitespace-pre-wrap">
+                        {r.sample}
+                      </pre>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => deleteReport(r.id)}
+                    className="text-gbx-muted hover:text-red-600 transition-colors shrink-0"
+                    title="Delete entry"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <p className="text-[11px] text-gbx-muted font-body">
