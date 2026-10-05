@@ -69,7 +69,7 @@ export function parseCsv(text: string): string[][] {
   return rows;
 }
 
-function parseDate(raw: string): string | null {
+export function parseDate(raw: string): string | null {
   const s = raw.trim();
   let m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
@@ -78,7 +78,7 @@ function parseDate(raw: string): string | null {
   return null;
 }
 
-function num(raw: string): number | null {
+export function num(raw: string): number | null {
   const c = raw.replace(/[$,\s]/g, "").replace(/AUD/gi, "");
   if (c === "" || c === "-") return null;
   const n = parseFloat(c);
@@ -108,7 +108,7 @@ const CATEGORY_RULES: [RegExp, string][] = [
   [/DIVIDEND|DISTRIBUTION/i, "Dividends"],
   [/RENT\b|MORTGAGE|HOME LOAN/i, "Housing"],
 ];
-function guessCategory(desc: string, amount: number): string | null {
+export function guessCategory(desc: string, amount: number): string | null {
   for (const [re, cat] of CATEGORY_RULES) if (re.test(desc)) return cat;
   return amount >= 0 ? null : "Other";
 }
@@ -118,7 +118,7 @@ const TICKER_ALIASES: Record<string, string> = {
   "BONK-AUD": "BONK-USD",
   "FARTCOIN-AUD": "FARTCOIN-USD",
 };
-function asxTicker(code: string): string {
+export function asxTicker(code: string): string {
   const t = code.toUpperCase().trim();
   if (TICKER_ALIASES[t]) return TICKER_ALIASES[t];
   if (t.includes(".") || t.includes("-")) return t;
@@ -128,7 +128,7 @@ function asxTicker(code: string): string {
 // Map the many ways brokers spell buy/sell to our two values. Accepts full
 // words, single letters (B/S), and past tense (bought/sold) so order exports
 // that don't say "buy"/"sell" verbatim still parse.
-function normalizeSide(raw: string): "buy" | "sell" | null {
+export function normalizeSide(raw: string): "buy" | "sell" | null {
   const s = (raw || "").toLowerCase().trim();
   if (!s) return null;
   if (s === "b" || s.startsWith("buy") || s.startsWith("bought") || s.startsWith("purchas"))

@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import DocumentsPanel from "@/components/DocumentsPanel";
-import AskClaudeHelp from "@/components/AskClaudeHelp";
 
 interface Account {
   id: string;
@@ -77,6 +76,7 @@ export default function ImportPage() {
 
   const [error, setError] = useState("");
   const [canOverride, setCanOverride] = useState(false);
+  const [claudeReading, setClaudeReading] = useState(false);
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -132,6 +132,35 @@ export default function ImportPage() {
     setFile(f);
     setUsMarket(false);
     analyzeFile(f);
+  }
+
+  // When auto-detection fails, let Claude read the raw file and extract the
+  // rows into the normal preview. Claude only extracts — the user still reviews
+  // and clicks Import, which runs the usual deterministic save path.
+  async function letClaudeRead() {
+    if (!file) return;
+    setResult(null);
+    setExcluded(new Set());
+    setCategoryOverrides({});
+    setError("");
+    setCanOverride(false);
+    setMessage(null);
+    setClaudeReading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/agent/parse", { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Claude couldn't read that file.");
+        return;
+      }
+      setResult(data);
+    } catch {
+      setError("Couldn't reach Claude — check your connection.");
+    } finally {
+      setClaudeReading(false);
+    }
   }
 
   function toggle(i: number) {
@@ -301,9 +330,18 @@ export default function ImportPage() {
         )}
         {error && <p className="text-sm text-red-600 font-body">{error}</p>}
         {error && file && (
-          <AskClaudeHelp
-            context={`The user tried to import a statement file into the Family Office app and it was rejected at the "identify document" step.\nFile: ${file.name} (type ${file.type || "unknown"}, ${Math.round(file.size / 1024)} KB)\nError shown to the user: ${error}\nThe importer handles bank CSVs, brokerage trade/order CSVs, and holdings CSV/PDF statements. Explain why this file may not have been recognised and what the user can do (e.g. check the columns, use the "Import as" buttons, or export a CSV instead of a PDF).`}
-          />
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={letClaudeRead}
+              disabled={claudeReading || analyzing}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gbx-teal text-white text-[11px] uppercase tracking-[0.1em] font-body font-medium hover:bg-gbx-deep-teal transition-colors disabled:opacity-50"
+            >
+              {claudeReading ? "Claude is reading…" : "Let Claude read this file"}
+            </button>
+            <span className="text-[11px] text-gbx-muted font-body">
+              Claude extracts the rows into the preview below — you confirm before anything is saved.
+            </span>
+          </div>
         )}
         {canOverride && file && (
           <div className="flex items-center gap-2 flex-wrap">
@@ -334,11 +372,6 @@ export default function ImportPage() {
           >
             {message}
           </p>
-        )}
-        {message?.startsWith("Import failed") && (
-          <AskClaudeHelp
-            context={`The user previewed an import in the Family Office app and clicked Import, but saving failed.\nDetected type: ${result?.kind ?? "unknown"}\nMessage shown: ${message}\nExplain in plain English what likely went wrong and what to try next.`}
-          />
         )}
       </div>
 

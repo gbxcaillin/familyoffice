@@ -2,6 +2,7 @@ import { query, tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk"
 import { z } from "zod";
 import Database from "better-sqlite3";
 import path from "path";
+import type { ImportKind } from "@/lib/import-detect";
 
 // ---------------------------------------------------------------------------
 // "Ask your money" — a tool-using agent that answers natural-language questions
@@ -251,4 +252,107 @@ export async function askMoney(question: string, history: AskTurn[] = []): Promi
   }
 
   return { answer: answer || "I couldn't find an answer to that.", queries };
+}
+
+// ---------------------------------------------------------------------------
+// Agentic import rescue: when the deterministic detectors can't recognise a
+// file, hand its raw text to Claude to extract the rows. Claude only EXTRACTS —
+// it returns a structured payload via submit_import; the route normalises it and
+// the user still confirms in the preview before anything is written. Claude has
+// no database access here: its single tool is submit_import.
+// ---------------------------------------------------------------------------
+
+export interface AgentParse {
+  kind: ImportKind;
+  rows: Record<string, string | number | null>[];
+  note?: string;
+}
+
+const PARSE_SYSTEM = `You extract structured data from financial files for an Australian family-office app (users Caillin and Kirra). You are given the raw text of a statement the app's automatic importer could NOT recognise. Work out what it is and extract every data row, then call submit_import exactly once.
+
+Decide the kind:
+- "holdings": a current portfolio / valuation (positions you own now).
+- "trades": a buy/sell order or trade history.
+- "transactions": a bank/cash account statement (money in and out).
+
+Row shape by kind (use these exact keys):
+- holdings: { ticker, name, units, price, value }  (price/value optional if absent)
+- trades: { trade_date, ticker, side, units, price, fees }  (fees optional)
+- transactions: { date, description, amount, category }  (category optional)
+
+Rules:
+- Dates as YYYY-MM-DD.
+- Numbers as plain numbers (no $ or commas). For transactions, amount is NEGATIVE for money out (spending) and POSITIVE for money in.
+- side is "buy" or "sell".
+- ticker is the plain code only (e.g. "VAS", "CBA", "BTC") — the app adds the exchange suffix.
+- Extract only rows actually present. Never invent or estimate rows. Skip summary/total lines.
+- If you genuinely cannot find any importable rows, call submit_import with an empty rows array and a short note explaining why.`;
+
+export async function parseImportFile(
+  text: string,
+  opts: { hint?: ImportKind } = {}
+): Promise<AgentParse> {
+  if (!agentConfigured()) {
+    throw new Error(
+      "The assistant isn't configured. Set CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) in the server environment."
+    );
+  }
+
+  let captured: AgentParse | null = null;
+
+  const submit = tool(
+    "submit_import",
+    "Submit the rows you extracted from the file, classified as holdings, trades, or transactions.",
+    {
+      kind: z.enum(["holdings", "trades", "transactions"]),
+      rows: z.array(z.record(z.string(), z.union([z.string(), z.number(), z.null()]))),
+      note: z.string().optional(),
+    },
+    async (args: {
+      kind: ImportKind;
+      rows: Record<string, string | number | null>[];
+      note?: string;
+    }) => {
+      captured = { kind: args.kind, rows: args.rows || [], note: args.note };
+      return { content: [{ type: "text" as const, text: `Received ${captured.rows.length} rows.` }] };
+    }
+  );
+
+  const server = createSdkMcpServer({ name: SERVER_NAME, version: "1.0.0", tools: [submit] });
+  const fqn = `mcp__${SERVER_NAME}__submit_import`;
+
+  // Cap the input so a huge file can't blow the context budget.
+  const body = text.length > 100_000 ? text.slice(0, 100_000) : text;
+  const prompt =
+    (opts.hint ? `The user says this file is ${opts.hint}.\n\n` : "") +
+    `Raw file text follows. Extract the rows and call submit_import.\n\n---\n${body}`;
+
+  const result = query({
+    prompt,
+    options: {
+      model: MODEL,
+      systemPrompt: PARSE_SYSTEM,
+      mcpServers: { [SERVER_NAME]: server },
+      allowedTools: [fqn],
+      disallowedTools: [
+        "Bash", "Read", "Write", "Edit", "MultiEdit", "NotebookEdit",
+        "Glob", "Grep", "WebSearch", "WebFetch", "Task", "TodoWrite",
+      ],
+      permissionMode: "dontAsk",
+      settingSources: [],
+      maxTurns: 4,
+      env: { ...process.env, ANTHROPIC_API_KEY: undefined },
+    },
+  });
+
+  for await (const message of result) {
+    if (message.type === "result" && message.subtype !== "success") {
+      throw new Error("Claude couldn't read this file — try exporting it as a CSV.");
+    }
+  }
+
+  if (!captured) {
+    throw new Error("Claude couldn't make sense of this file — try exporting it as a CSV.");
+  }
+  return captured;
 }
