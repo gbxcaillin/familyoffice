@@ -45,6 +45,7 @@ export async function POST(request: NextRequest) {
   let imported = 0;
   let updated = 0;
   let reconciled = 0;
+  let skipped = 0;
   const touched = new Set<string>();
   // Tickers that already have a trade history: keep their trade-derived cost
   // basis and just reconcile units to the valuation, rather than overwriting.
@@ -53,7 +54,10 @@ export async function POST(request: NextRequest) {
   const batch = db.transaction(() => {
     for (const h of holdings) {
       const ticker = (h.ticker || "").toUpperCase().trim();
-      if (!ticker || !h.units || h.units <= 0) continue;
+      if (!ticker || !h.units || h.units <= 0) {
+        skipped += 1;
+        continue;
+      }
 
       if (accountHasTrades(db, account_id, ticker)) {
         // Trades own the cost basis; remember the valuation units to top up to.
@@ -133,5 +137,5 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ imported, updated, reconciled });
+  return NextResponse.json({ imported, updated, reconciled, skipped });
 }
