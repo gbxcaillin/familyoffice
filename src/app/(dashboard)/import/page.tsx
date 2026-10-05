@@ -252,34 +252,50 @@ export default function ImportPage() {
           }),
         });
       }
-      const data = await res.json();
+      const data = await res.json().catch(() => ({ error: "Server returned an unreadable response." }));
       if (data.error) {
         setMessage(`Import failed: ${data.error}`);
-      } else if (result.kind === "transactions") {
-        setMessage(`Imported ${data.imported} transactions (${data.skipped} skipped).`);
-        await archiveImportedFile();
-        resetPreview();
+        return;
+      }
+
+      let msg: string;
+      let ok = true; // did anything actually get added/changed?
+      if (result.kind === "transactions") {
+        msg = `Imported ${data.imported} transactions (${data.skipped} skipped).`;
       } else if (result.kind === "trades") {
-        setMessage(
-          `Imported ${data.imported} trades (${data.skipped} skipped). Holdings updated.${
-            data.reconciled
-              ? ` Reconciled ${data.reconciled} position${data.reconciled !== 1 ? "s" : ""} to the statement (DRP top-up).`
-              : ""
-          }`
-        );
-        await archiveImportedFile();
-        resetPreview();
+        const changed = (data.imported || 0) + (data.reconciled || 0);
+        ok = changed > 0;
+        msg = ok
+          ? `Imported ${data.imported} trades (${data.skipped} skipped). Holdings updated.${
+              data.reconciled
+                ? ` Reconciled ${data.reconciled} position${data.reconciled !== 1 ? "s" : ""} to the statement (DRP top-up).`
+                : ""
+            }`
+          : `Import failed: nothing was added to this account — all ${data.skipped || 0} row(s) were skipped (already imported, or missing a buy/sell side, units or price). Nothing changed.`;
       } else {
-        setMessage(
-          `Imported ${data.imported} new holdings, updated ${data.updated}.${
-            data.reconciled
-              ? ` Reconciled ${data.reconciled} traded position${data.reconciled !== 1 ? "s" : ""} to the statement units, keeping the trade cost basis.`
-              : " Cost basis seeded from the statement — edit a holding to set the real entry price."
-          }`
-        );
+        const changed = (data.imported || 0) + (data.updated || 0) + (data.reconciled || 0);
+        ok = changed > 0;
+        msg = ok
+          ? `Imported ${data.imported} new holdings, updated ${data.updated}.${
+              data.reconciled
+                ? ` Reconciled ${data.reconciled} traded position${data.reconciled !== 1 ? "s" : ""} to the statement units, keeping the trade cost basis.`
+                : data.imported
+                  ? " Cost basis seeded from the statement — edit a holding to set the real entry price."
+                  : ""
+            }`
+          : `Import failed: nothing was added — ${data.skipped || 0} row(s) skipped. Check you picked the right account in "Into account", and that each row has units above zero.`;
+      }
+
+      // Only archive the file and clear the preview on a real change; a no-op
+      // keeps the preview so you can fix the account/rows and retry. Set the
+      // message AFTER reset so it stays on screen (reset clears it otherwise).
+      if (ok) {
         await archiveImportedFile();
         resetPreview();
       }
+      setMessage(msg);
+    } catch {
+      setMessage("Import failed: couldn't reach the server. Please try again.");
     } finally {
       setImporting(false);
     }
