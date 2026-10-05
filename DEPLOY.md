@@ -82,20 +82,8 @@ Paste that token into `.env.production` as `CLAUDE_CODE_OAUTH_TOKEN`, then
 ### Reports when Claude has to step in
 
 When the built-in code can't handle something and Claude rescues it (e.g. an
-unrecognised import), the app logs it and emails a report to `cc@gbxps.com` so
-the underlying parser can be improved. Reports are **always** saved in the
-database; the email is sent only if SMTP is configured. Add to
-`.env.production` to enable email (any mailbox's SMTP — your gbxps.com host, or
-a Gmail app password):
-
-```
-REPORT_EMAIL=cc@gbxps.com
-SMTP_HOST=smtp.your-host.com
-SMTP_PORT=587
-SMTP_USER=your-smtp-user
-SMTP_PASS=your-smtp-password
-MAIL_FROM=Family Office <noreply@gbxps.com>
-```
+unrecognised import), the app logs it to **Settings → Assist log** so the
+underlying parser can be improved. No email or extra configuration required.
 
 ## DNS (VentraIP VIPControl)
 

@@ -85,9 +85,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }
 
-  // Claude had to step in — log it and email the owner so the deterministic
-  // importer can be improved to handle this format natively next time.
-  await recordAgentAssist(getDb(), {
+  // Claude had to step in — log it so the deterministic importer can be
+  // improved to handle this format natively next time (Settings → Assist log).
+  recordAgentAssist(getDb(), {
     feature: "import-parse",
     fileName: file.name,
     detectError,
