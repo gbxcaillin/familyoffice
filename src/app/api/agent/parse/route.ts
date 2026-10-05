@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import getDb from "@/lib/db";
+import { recordAgentAssist } from "@/lib/reports";
 import { parseImportFile, agentConfigured } from "@/lib/agent";
 import {
   asxTicker,
@@ -51,6 +53,9 @@ export async function POST(request: NextRequest) {
     hintRaw === "holdings" || hintRaw === "trades" || hintRaw === "transactions"
       ? hintRaw
       : undefined;
+  const detectError = typeof form.get("detectError") === "string"
+    ? (form.get("detectError") as string)
+    : undefined;
 
   const buf = Buffer.from(await file.arrayBuffer());
   const isPdf =
@@ -79,6 +84,18 @@ export async function POST(request: NextRequest) {
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 502 });
   }
+
+  // Claude had to step in — log it and email the owner so the deterministic
+  // importer can be improved to handle this format natively next time.
+  await recordAgentAssist(getDb(), {
+    feature: "import-parse",
+    fileName: file.name,
+    detectError,
+    resultKind: parsed.kind,
+    rowCount: parsed.rows.length,
+    note: parsed.note,
+    sample: text.split(/\r?\n/).slice(0, 25).join("\n"),
+  });
 
   const warnings = [
     "Read by Claude — check every row carefully before importing.",

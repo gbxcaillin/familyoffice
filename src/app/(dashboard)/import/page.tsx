@@ -139,6 +139,7 @@ export default function ImportPage() {
   // and clicks Import, which runs the usual deterministic save path.
   async function letClaudeRead() {
     if (!file) return;
+    const priorError = error; // why auto-detect failed — include in the report
     setResult(null);
     setExcluded(new Set());
     setCategoryOverrides({});
@@ -149,6 +150,7 @@ export default function ImportPage() {
     try {
       const fd = new FormData();
       fd.append("file", file);
+      if (priorError) fd.append("detectError", priorError);
       const res = await fetch("/api/agent/parse", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) {

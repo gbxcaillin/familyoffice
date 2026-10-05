@@ -79,6 +79,24 @@ Paste that token into `.env.production` as `CLAUDE_CODE_OAUTH_TOKEN`, then
 - Until the token is set, the Ask tab shows a "not configured" notice; the rest
   of the app is unaffected.
 
+### Reports when Claude has to step in
+
+When the built-in code can't handle something and Claude rescues it (e.g. an
+unrecognised import), the app logs it and emails a report to `cc@gbxps.com` so
+the underlying parser can be improved. Reports are **always** saved in the
+database; the email is sent only if SMTP is configured. Add to
+`.env.production` to enable email (any mailbox's SMTP — your gbxps.com host, or
+a Gmail app password):
+
+```
+REPORT_EMAIL=cc@gbxps.com
+SMTP_HOST=smtp.your-host.com
+SMTP_PORT=587
+SMTP_USER=your-smtp-user
+SMTP_PASS=your-smtp-password
+MAIL_FROM=Family Office <noreply@gbxps.com>
+```
+
 ## DNS (VentraIP VIPControl)
 
 Add one record to the gbxps.com zone:
