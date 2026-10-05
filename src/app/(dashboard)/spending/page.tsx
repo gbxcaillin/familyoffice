@@ -24,6 +24,14 @@ interface Category {
   type: string;
 }
 
+interface Proposal {
+  id: string;
+  date: string;
+  amount: number;
+  description: string;
+  proposed: string;
+}
+
 function formatCurrency(value: number): string {
   return new Intl.NumberFormat("en-AU", {
     style: "currency", currency: "AUD",
@@ -41,6 +49,16 @@ export default function SpendingPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [sectionOrder, setSectionOrder] = useState<string[]>(["summary", "transactions"]);
+
+  // Bulk categorisation with Claude (propose → confirm → apply).
+  const [uncat, setUncat] = useState(0);
+  const [catConfigured, setCatConfigured] = useState(false);
+  const [proposals, setProposals] = useState<Proposal[] | null>(null);
+  const [catBusy, setCatBusy] = useState(false);
+  const [catApplying, setCatApplying] = useState(false);
+  const [catOverride, setCatOverride] = useState<Record<string, string>>({});
+  const [catExcluded, setCatExcluded] = useState<Set<string>>(new Set());
+  const [catMsg, setCatMsg] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     account_id: "", date: new Date().toISOString().split("T")[0],
@@ -106,6 +124,69 @@ export default function SpendingPage() {
     load();
   }
 
+  const refreshCat = useCallback(() => {
+    fetch("/api/agent/categorize")
+      .then((r) => r.json())
+      .then((d) => {
+        setUncat(d.uncategorised || 0);
+        setCatConfigured(Boolean(d.configured));
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    refreshCat();
+  }, [refreshCat]);
+
+  async function proposeCats() {
+    setCatBusy(true);
+    setCatMsg(null);
+    try {
+      const res = await fetch("/api/agent/categorize", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setCatMsg(data.error || "Couldn't categorise.");
+        return;
+      }
+      setProposals(data.proposals || []);
+      setCatOverride({});
+      setCatExcluded(new Set());
+      if ((data.proposals || []).length === 0) {
+        setCatMsg("Nothing uncategorised to work on.");
+      }
+    } catch {
+      setCatMsg("Couldn't reach Claude — check your connection.");
+    } finally {
+      setCatBusy(false);
+    }
+  }
+
+  async function applyCats() {
+    if (!proposals) return;
+    const updates = proposals
+      .filter((p) => !catExcluded.has(p.id))
+      .map((p) => ({ id: p.id, category: catOverride[p.id] ?? p.proposed }));
+    if (updates.length === 0) {
+      setProposals(null);
+      return;
+    }
+    setCatApplying(true);
+    try {
+      const res = await fetch("/api/agent/categorize", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ updates }),
+      });
+      const data = await res.json();
+      setCatMsg(`Categorised ${data.updated} transaction${data.updated !== 1 ? "s" : ""}.`);
+      setProposals(null);
+      load();
+      refreshCat();
+    } finally {
+      setCatApplying(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -132,13 +213,121 @@ export default function SpendingPage() {
             Track transactions and categorise spending
           </p>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="bg-gbx-teal text-white px-5 py-2.5 text-[11px] uppercase tracking-[0.15em] font-body font-medium hover:bg-gbx-deep-teal transition-colors"
-        >
-          {showForm ? "Cancel" : "Add Transaction"}
-        </button>
+        <div className="flex items-center gap-3 flex-wrap">
+          {catConfigured && uncat > 0 && !proposals && (
+            <button
+              onClick={proposeCats}
+              disabled={catBusy}
+              className="border border-gbx-teal text-gbx-teal px-4 py-2.5 text-[11px] uppercase tracking-[0.15em] font-body font-medium hover:bg-gbx-teal hover:text-white transition-colors disabled:opacity-50"
+            >
+              {catBusy ? "Claude is reading…" : `Categorise ${uncat} with Claude`}
+            </button>
+          )}
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="bg-gbx-teal text-white px-5 py-2.5 text-[11px] uppercase tracking-[0.15em] font-body font-medium hover:bg-gbx-deep-teal transition-colors"
+          >
+            {showForm ? "Cancel" : "Add Transaction"}
+          </button>
+        </div>
       </div>
+
+      {catMsg && (
+        <p className="text-sm font-body font-medium text-gbx-teal" style={{ order: 0 }}>
+          {catMsg}
+        </p>
+      )}
+
+      {/* Claude's proposed categories — review before applying */}
+      {proposals && proposals.length > 0 && (
+        <div className="bg-white border border-gbx-border" style={{ order: 2 }}>
+          <div className="px-4 sm:px-6 pt-5 pb-3 flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] uppercase tracking-[0.15em] font-body font-medium bg-gbx-teal/10 text-gbx-teal px-2 py-1">
+                  Proposed by Claude
+                </span>
+                <h2 className="text-sm font-body font-medium text-gbx-charcoal">
+                  {proposals.length - catExcluded.size} of {proposals.length} to apply
+                </h2>
+              </div>
+              <p className="text-[11px] text-gbx-muted font-body mt-1">
+                Review and adjust — nothing is saved until you apply.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setProposals(null)}
+                className="px-4 py-2 text-[11px] uppercase tracking-[0.12em] font-body font-medium border border-gbx-border text-gbx-muted hover:text-gbx-charcoal transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={applyCats}
+                disabled={catApplying || proposals.length - catExcluded.size === 0}
+                className="px-4 py-2 bg-gbx-teal text-white text-[11px] uppercase tracking-[0.12em] font-body font-medium hover:bg-gbx-deep-teal transition-colors disabled:opacity-50"
+              >
+                {catApplying ? "Applying…" : `Apply ${proposals.length - catExcluded.size}`}
+              </button>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm font-body">
+              <thead>
+                <tr className="border-y border-gbx-border text-[10px] uppercase tracking-[0.12em] text-gbx-muted">
+                  <th className="px-3 py-2 w-8" />
+                  <th className="px-3 py-2 text-left font-medium">Date</th>
+                  <th className="px-3 py-2 text-left font-medium">Description</th>
+                  <th className="px-3 py-2 text-right font-medium">Amount</th>
+                  <th className="px-3 py-2 text-left font-medium">Category</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gbx-border/60">
+                {proposals.map((p) => {
+                  const isExpense = p.amount < 0;
+                  const opts = categories.filter((c) =>
+                    isExpense ? c.type === "expense" : c.type === "income"
+                  );
+                  return (
+                    <tr key={p.id} className={catExcluded.has(p.id) ? "opacity-40" : ""}>
+                      <td className="px-3 py-2">
+                        <input
+                          type="checkbox"
+                          checked={!catExcluded.has(p.id)}
+                          onChange={() =>
+                            setCatExcluded((s) => {
+                              const n = new Set(s);
+                              if (n.has(p.id)) n.delete(p.id);
+                              else n.add(p.id);
+                              return n;
+                            })
+                          }
+                        />
+                      </td>
+                      <td className="px-3 py-2 font-data text-xs text-gbx-charcoal whitespace-nowrap">{p.date}</td>
+                      <td className="px-3 py-2 text-xs text-gbx-charcoal max-w-[260px] truncate">{p.description}</td>
+                      <td className={`px-3 py-2 text-right font-data text-xs whitespace-nowrap ${p.amount >= 0 ? "text-gbx-teal" : "text-red-600"}`}>
+                        {p.amount >= 0 ? "+" : ""}{formatCurrency(p.amount)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <select
+                          value={catOverride[p.id] ?? p.proposed}
+                          onChange={(e) => setCatOverride((c) => ({ ...c, [p.id]: e.target.value }))}
+                          className="border border-gbx-border text-xs font-body px-2 py-1 bg-white text-gbx-charcoal"
+                        >
+                          {opts.map((c) => (
+                            <option key={c.id} value={c.name}>{c.name}</option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Summary strip */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4" style={{ order: orderOf("summary") }}>

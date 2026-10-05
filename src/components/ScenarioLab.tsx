@@ -276,6 +276,12 @@ export default function ScenarioLab() {
   const [saving, setSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState("");
 
+  // Natural-language what-if (maps a phrase to slider changes via Claude).
+  const [whatIf, setWhatIf] = useState("");
+  const [whatIfBusy, setWhatIfBusy] = useState(false);
+  const [whatIfMsg, setWhatIfMsg] = useState<string | null>(null);
+  const [whatIfErr, setWhatIfErr] = useState(false);
+
   function seedFrom(b: Baseline): Scenario {
     const spend = b.annualSpend ?? 80000;
     const homeEquity = b.mortgage.propertyValue - b.mortgage.loanBalance;
@@ -339,6 +345,44 @@ export default function ScenarioLab() {
   }
 
   const set = (patch: Partial<Scenario>) => setSc({ ...sc, ...patch });
+
+  // Ask Claude to translate a plain-English change into slider values, then
+  // apply them. Nothing is saved — it just updates the scenario so the chart
+  // re-projects; the user can then Save as plan if they like it.
+  async function runWhatIf() {
+    const phrase = whatIf.trim();
+    if (!phrase || !sc) return;
+    setWhatIfBusy(true);
+    setWhatIfMsg(null);
+    setWhatIfErr(false);
+    try {
+      const res = await fetch("/api/agent/whatif", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phrase, scenario: sc }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setWhatIfErr(true);
+        setWhatIfMsg(
+          res.status === 503
+            ? "Claude isn't set up yet on the server."
+            : data?.error || "Couldn't model that."
+        );
+        return;
+      }
+      const changes = (data.changes || {}) as Partial<Scenario>;
+      if (Object.keys(changes).length > 0) setSc({ ...sc, ...changes });
+      setWhatIfMsg(data.explanation || "Applied.");
+      setWhatIf("");
+    } catch {
+      setWhatIfErr(true);
+      setWhatIfMsg("Couldn't reach Claude — check your connection.");
+    } finally {
+      setWhatIfBusy(false);
+    }
+  }
+
   const dirty = JSON.stringify(sc) !== JSON.stringify(seedFrom(base));
   const hasMortgage = sc.loanBalance > 0;
   const needsBridge = sc.retireAge < sc.preservationAge;
@@ -429,6 +473,41 @@ export default function ScenarioLab() {
             {saving ? "Saving…" : "Save as my plan"}
           </button>
         </div>
+      </div>
+
+      {/* Ask in words — Claude maps a life change to the sliders */}
+      <div className="bg-gbx-soft border border-gbx-border p-3 sm:p-4">
+        <label className={labelClass}>Model a change in plain English</label>
+        <div className="flex items-end gap-2 mt-1">
+          <input
+            value={whatIf}
+            onChange={(e) => setWhatIf(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !whatIfBusy) {
+                e.preventDefault();
+                runWhatIf();
+              }
+            }}
+            placeholder="e.g. Kirra drops to 3 days a week and we retire at 55"
+            className={inputClass + " flex-1"}
+          />
+          <button
+            onClick={runWhatIf}
+            disabled={whatIfBusy || !whatIf.trim()}
+            className="bg-gbx-teal text-white px-4 py-2 text-[11px] uppercase tracking-[0.15em] font-body font-medium hover:bg-gbx-deep-teal transition-colors disabled:opacity-50 shrink-0"
+          >
+            {whatIfBusy ? "Modelling…" : "Model it"}
+          </button>
+        </div>
+        {whatIfMsg && (
+          <p className={`text-[12px] font-body mt-2 ${whatIfErr ? "text-red-600" : "text-gbx-charcoal"}`}>
+            {whatIfErr ? whatIfMsg : `Claude: ${whatIfMsg}`}
+          </p>
+        )}
+        <p className="text-[10px] text-gbx-muted font-body mt-1">
+          This just moves the sliders below so the chart updates — nothing is saved until you press
+          “Save as my plan”.
+        </p>
       </div>
 
       {/* Outcomes */}

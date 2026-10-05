@@ -356,3 +356,206 @@ export async function parseImportFile(
   }
   return captured;
 }
+
+// ---------------------------------------------------------------------------
+// Bulk transaction categorisation. Given uncategorised transactions and the
+// household's category list, Claude proposes a category for each. It only
+// proposes — the route validates against the allowed list and the user confirms
+// before anything is written. Claude has no DB access; its one tool is
+// submit_categories.
+// ---------------------------------------------------------------------------
+
+export interface CategorizeTxn {
+  id: string;
+  date: string;
+  amount: number;
+  description: string;
+}
+
+export async function categorizeTransactions(
+  txns: CategorizeTxn[],
+  expenseCategories: string[],
+  incomeCategories: string[]
+): Promise<{ id: string; category: string }[]> {
+  if (!agentConfigured()) {
+    throw new Error(
+      "The assistant isn't configured. Set CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) in the server environment."
+    );
+  }
+  if (txns.length === 0) return [];
+
+  let captured: { id: string; category: string }[] | null = null;
+
+  const submit = tool(
+    "submit_categories",
+    "Submit the chosen category for each transaction id.",
+    {
+      assignments: z.array(
+        z.object({ id: z.string(), category: z.string() })
+      ),
+    },
+    async (args: { assignments: { id: string; category: string }[] }) => {
+      captured = args.assignments || [];
+      return { content: [{ type: "text" as const, text: `Received ${captured.length} assignments.` }] };
+    }
+  );
+
+  const server = createSdkMcpServer({ name: SERVER_NAME, version: "1.0.0", tools: [submit] });
+  const fqn = `mcp__${SERVER_NAME}__submit_categories`;
+
+  const system = `You categorise bank transactions for a private Australian family-office app (users Caillin and Kirra).
+You are given transactions and the ONLY category names you may use. Assign each transaction the single best-fitting category.
+
+Rules:
+- A negative amount is money out (an expense) — use an EXPENSE category.
+- A positive amount is money in (income) — use an INCOME category.
+- Use the category names EXACTLY as given; do not invent new ones.
+- If an expense doesn't clearly fit, use "Other".
+- Give every transaction id exactly one assignment, then call submit_categories once.
+
+Expense categories: ${expenseCategories.join(", ")}
+Income categories: ${incomeCategories.join(", ")}`;
+
+  const lines = txns
+    .map((t) => `${t.id} | ${t.date} | ${t.amount} | ${t.description}`)
+    .join("\n");
+  const prompt = `Categorise these transactions (id | date | amount | description):\n\n${lines}`;
+
+  const result = query({
+    prompt,
+    options: {
+      model: MODEL,
+      systemPrompt: system,
+      mcpServers: { [SERVER_NAME]: server },
+      allowedTools: [fqn],
+      disallowedTools: [
+        "Bash", "Read", "Write", "Edit", "MultiEdit", "NotebookEdit",
+        "Glob", "Grep", "WebSearch", "WebFetch", "Task", "TodoWrite",
+      ],
+      permissionMode: "dontAsk",
+      settingSources: [],
+      maxTurns: 4,
+      env: { ...process.env, ANTHROPIC_API_KEY: undefined },
+    },
+  });
+
+  for await (const message of result) {
+    if (message.type === "result" && message.subtype !== "success") {
+      throw new Error("Claude couldn't categorise these — try again.");
+    }
+  }
+  return captured || [];
+}
+
+// ---------------------------------------------------------------------------
+// FIRE natural-language what-if. The user describes a life change in words
+// ("Kirra goes to 3 days a week"); Claude maps it to new values for the
+// scenario sliders and explains its assumption. Nothing is saved — it just
+// moves the sliders so the projection re-runs. Claude's one tool is submit_whatif.
+// ---------------------------------------------------------------------------
+
+// The scenario fields Claude is allowed to change (numbers only).
+const WHATIF_FIELDS = [
+  "spend", "netIncome", "accReturn", "retReturn", "inflation",
+  "investWithin", "investExtra", "superContrib", "retireAge",
+  "extraMonthly", "longevity", "swr", "propGrowth",
+] as const;
+type WhatIfField = (typeof WHATIF_FIELDS)[number];
+
+export interface WhatIfResult {
+  changes: Partial<Record<WhatIfField, number>>;
+  explanation: string;
+}
+
+export async function whatIfScenario(
+  phrase: string,
+  scenario: Record<string, unknown>
+): Promise<WhatIfResult> {
+  if (!agentConfigured()) {
+    throw new Error(
+      "The assistant isn't configured. Set CLAUDE_CODE_OAUTH_TOKEN (from `claude setup-token`) in the server environment."
+    );
+  }
+
+  let captured: Record<string, unknown> | null = null;
+
+  const shape: Record<string, z.ZodTypeAny> = { explanation: z.string() };
+  for (const f of WHATIF_FIELDS) shape[f] = z.number().optional();
+
+  const submit = tool(
+    "submit_whatif",
+    "Submit the new absolute values for the scenario fields that should change, plus a short explanation. Omit fields that stay the same.",
+    shape,
+    async (args: Record<string, unknown>) => {
+      captured = args;
+      return { content: [{ type: "text" as const, text: "Received." }] };
+    }
+  );
+
+  const server = createSdkMcpServer({ name: SERVER_NAME, version: "1.0.0", tools: [submit] });
+  const fqn = `mcp__${SERVER_NAME}__submit_whatif`;
+
+  const current = Object.fromEntries(
+    WHATIF_FIELDS.map((f) => [f, (scenario as Record<string, number>)[f]])
+  );
+
+  const system = `You adjust a retirement (FIRE) projection for a private Australian family-office app (users Caillin and Kirra). The user describes a change in plain English; you translate it into new values for the scenario inputs below and call submit_whatif once.
+
+Fields (all numbers; return ABSOLUTE new values, only for fields that change):
+- spend: annual all-in household spend in $ (includes mortgage).
+- netIncome: household after-tax income in $/yr.
+- accReturn: nominal investment return % while still working.
+- retReturn: nominal investment return % in retirement.
+- inflation: %.
+- investWithin: $/yr invested from WITHIN the spend budget.
+- investExtra: $/yr invested ON TOP of spend.
+- superContrib: net employer super contributions $/yr.
+- retireAge: target retirement age.
+- extraMonthly: extra monthly mortgage repayment in $.
+- longevity: age to plan funds until.
+- swr: safe withdrawal rate %.
+- propGrowth: property growth % (real).
+
+Guidance:
+- Make reasonable, conservative estimates and state the key assumption. E.g. "drop to 3 days a week" ≈ income × 3/5, and superContrib scales with income the same way.
+- Change ONLY what the request implies; leave everything else out so it stays as-is.
+- Keep the explanation to 1–2 sentences, plain English.
+
+Current values: ${JSON.stringify(current)}`;
+
+  const result = query({
+    prompt: `Change to model: ${phrase}`,
+    options: {
+      model: MODEL,
+      systemPrompt: system,
+      mcpServers: { [SERVER_NAME]: server },
+      allowedTools: [fqn],
+      disallowedTools: [
+        "Bash", "Read", "Write", "Edit", "MultiEdit", "NotebookEdit",
+        "Glob", "Grep", "WebSearch", "WebFetch", "Task", "TodoWrite",
+      ],
+      permissionMode: "dontAsk",
+      settingSources: [],
+      maxTurns: 4,
+      env: { ...process.env, ANTHROPIC_API_KEY: undefined },
+    },
+  });
+
+  for await (const message of result) {
+    if (message.type === "result" && message.subtype !== "success") {
+      throw new Error("Claude couldn't model that — try rephrasing.");
+    }
+  }
+  if (!captured) throw new Error("Claude couldn't model that — try rephrasing.");
+
+  const changes: Partial<Record<WhatIfField, number>> = {};
+  for (const f of WHATIF_FIELDS) {
+    const v = (captured as Record<string, unknown>)[f];
+    if (typeof v === "number" && isFinite(v)) changes[f] = v;
+  }
+  const explanation =
+    typeof (captured as Record<string, unknown>).explanation === "string"
+      ? ((captured as Record<string, unknown>).explanation as string)
+      : "Applied the changes.";
+  return { changes, explanation };
+}
