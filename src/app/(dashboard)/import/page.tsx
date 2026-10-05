@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import DocumentsPanel from "@/components/DocumentsPanel";
+import AskClaudeHelp from "@/components/AskClaudeHelp";
 
 interface Account {
   id: string;
@@ -299,6 +300,11 @@ export default function ImportPage() {
           <p className="text-sm text-gbx-muted font-body">Identifying document...</p>
         )}
         {error && <p className="text-sm text-red-600 font-body">{error}</p>}
+        {error && file && (
+          <AskClaudeHelp
+            context={`The user tried to import a statement file into the Family Office app and it was rejected at the "identify document" step.\nFile: ${file.name} (type ${file.type || "unknown"}, ${Math.round(file.size / 1024)} KB)\nError shown to the user: ${error}\nThe importer handles bank CSVs, brokerage trade/order CSVs, and holdings CSV/PDF statements. Explain why this file may not have been recognised and what the user can do (e.g. check the columns, use the "Import as" buttons, or export a CSV instead of a PDF).`}
+          />
+        )}
         {canOverride && file && (
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[11px] uppercase tracking-[0.12em] font-body font-medium text-gbx-muted">
@@ -321,7 +327,18 @@ export default function ImportPage() {
           </div>
         )}
         {message && (
-          <p className="text-sm text-gbx-teal font-body font-medium">{message}</p>
+          <p
+            className={`text-sm font-body font-medium ${
+              message.startsWith("Import failed") ? "text-red-600" : "text-gbx-teal"
+            }`}
+          >
+            {message}
+          </p>
+        )}
+        {message?.startsWith("Import failed") && (
+          <AskClaudeHelp
+            context={`The user previewed an import in the Family Office app and clicked Import, but saving failed.\nDetected type: ${result?.kind ?? "unknown"}\nMessage shown: ${message}\nExplain in plain English what likely went wrong and what to try next.`}
+          />
         )}
       </div>
 
