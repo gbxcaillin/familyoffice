@@ -75,6 +75,7 @@ export default function ImportPage() {
   const [usMarket, setUsMarket] = useState(false);
 
   const [error, setError] = useState("");
+  const [canOverride, setCanOverride] = useState(false);
   const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -92,20 +93,30 @@ export default function ImportPage() {
     setCategoryOverrides({});
     setUsMarket(false);
     setError("");
+    setCanOverride(false);
     setMessage(null);
   }
 
-  async function handleFile(file: File) {
-    resetPreview();
-    setFile(file);
+  // Analyse the file. With no `kind`, the server auto-detects the document type;
+  // with a `kind` (manual override), it parses as that type. The file is kept
+  // on state throughout so the override buttons can re-submit it.
+  async function analyzeFile(f: File, kind?: "holdings" | "trades" | "transactions") {
+    setResult(null);
+    setExcluded(new Set());
+    setCategoryOverrides({});
+    setError("");
+    setCanOverride(false);
+    setMessage(null);
     setAnalyzing(true);
     try {
       const fd = new FormData();
-      fd.append("file", file);
+      fd.append("file", f);
+      if (kind) fd.append("kind", kind);
       const res = await fetch("/api/import/analyze", { method: "POST", body: fd });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Could not analyse the file.");
+        setCanOverride(Boolean(data.canOverride));
         return;
       }
       setResult(data);
@@ -114,6 +125,12 @@ export default function ImportPage() {
     } finally {
       setAnalyzing(false);
     }
+  }
+
+  function handleFile(f: File) {
+    setFile(f);
+    setUsMarket(false);
+    analyzeFile(f);
   }
 
   function toggle(i: number) {
@@ -282,6 +299,27 @@ export default function ImportPage() {
           <p className="text-sm text-gbx-muted font-body">Identifying document...</p>
         )}
         {error && <p className="text-sm text-red-600 font-body">{error}</p>}
+        {canOverride && file && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] uppercase tracking-[0.12em] font-body font-medium text-gbx-muted">
+              Import as:
+            </span>
+            {([
+              ["holdings", "Holdings"],
+              ["trades", "Orders"],
+              ["transactions", "Transactions"],
+            ] as const).map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => analyzeFile(file, k)}
+                disabled={analyzing}
+                className="px-3 py-1.5 border border-gbx-teal text-gbx-teal text-[11px] uppercase tracking-[0.1em] font-body font-medium hover:bg-gbx-teal hover:text-white transition-colors disabled:opacity-50"
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         {message && (
           <p className="text-sm text-gbx-teal font-body font-medium">{message}</p>
         )}

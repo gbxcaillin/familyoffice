@@ -125,6 +125,19 @@ function asxTicker(code: string): string {
   return t + ".AX";
 }
 
+// Map the many ways brokers spell buy/sell to our two values. Accepts full
+// words, single letters (B/S), and past tense (bought/sold) so order exports
+// that don't say "buy"/"sell" verbatim still parse.
+function normalizeSide(raw: string): "buy" | "sell" | null {
+  const s = (raw || "").toLowerCase().trim();
+  if (!s) return null;
+  if (s === "b" || s.startsWith("buy") || s.startsWith("bought") || s.startsWith("purchas"))
+    return "buy";
+  if (s === "s" || s.startsWith("sell") || s.startsWith("sold") || s.startsWith("sale"))
+    return "sell";
+  return null;
+}
+
 // ---- CSV detectors ----
 
 function detectSelfwealthCashReport(rows: string[][]): AnalyzeResult | null {
@@ -181,9 +194,9 @@ function detectExchangeOrders(rows: string[][]): AnalyzeResult | null {
     const date = parseDate(row[dateCol] || "");
     const units = num(row[unitsCol] || "");
     const price = num(row[rateCol] || "");
-    const side = (row[typeCol] || "").toLowerCase().trim();
+    const side = normalizeSide(row[typeCol] || "");
     const ticker = asxTicker((row[marketCol] || "").replace("/", "-"));
-    if (!date || !units || price === null || (side !== "buy" && side !== "sell")) continue;
+    if (!date || !units || price === null || !side) continue;
     trades.push({ trade_date: date, ticker, side, units, price, fees: 0 });
   }
   if (trades.length === 0) return null;
@@ -199,9 +212,9 @@ function detectExchangeOrders(rows: string[][]): AnalyzeResult | null {
 function detectGenericTrades(rows: string[][]): AnalyzeResult | null {
   const h = rows[0];
   const dateCol = guessCol(h, ["date"]);
-  const tickerCol = guessCol(h, ["ticker", "symbol", "code", "security"]);
-  const sideCol = guessCol(h, ["side", "type", "action"]);
-  const unitsCol = guessCol(h, ["units", "quantity", "qty", "volume"]);
+  const tickerCol = guessCol(h, ["ticker", "symbol", "code", "security", "instrument", "stock", "asset"]);
+  const sideCol = guessCol(h, ["side", "type", "action", "direction", "transaction"]);
+  const unitsCol = guessCol(h, ["units", "quantity", "qty", "volume", "shares", "filled"]);
   const priceCol = guessCol(h, ["price", "rate"]);
   const feesCol = guessCol(h, ["fee", "brokerage", "commission"]);
   if (dateCol === -1 || tickerCol === -1 || sideCol === -1 || unitsCol === -1 || priceCol === -1)
@@ -211,9 +224,9 @@ function detectGenericTrades(rows: string[][]): AnalyzeResult | null {
     const date = parseDate(row[dateCol] || "");
     const units = num(row[unitsCol] || "");
     const price = num(row[priceCol] || "");
-    const side = (row[sideCol] || "").toLowerCase().trim();
+    const side = normalizeSide(row[sideCol] || "");
     const ticker = asxTicker((row[tickerCol] || "").replace("/", "-"));
-    if (!date || !units || price === null || (side !== "buy" && side !== "sell")) continue;
+    if (!date || !units || price === null || !side) continue;
     trades.push({
       trade_date: date,
       ticker,
@@ -278,11 +291,11 @@ function detectHoldingsCsv(rows: string[][]): AnalyzeResult | null {
   let tickerCol = 0, nameCol = 1, priceCol = 2, unitsCol = 3, valueCol = 4;
   let dataRows = rows;
   if (headerish) {
-    tickerCol = guessCol(first, ["ticker", "symbol", "code", "security"]);
-    nameCol = guessCol(first, ["name", "description"]);
-    priceCol = guessCol(first, ["price", "last"]);
-    unitsCol = guessCol(first, ["units", "quantity", "qty", "shares", "holding"]);
-    valueCol = guessCol(first, ["value", "market value", "balance"]);
+    tickerCol = guessCol(first, ["ticker", "symbol", "code", "security", "instrument", "stock", "asset"]);
+    nameCol = guessCol(first, ["name", "description", "company"]);
+    priceCol = guessCol(first, ["price", "last", "nav"]);
+    unitsCol = guessCol(first, ["units", "quantity", "qty", "shares", "holding", "position"]);
+    valueCol = guessCol(first, ["value", "market value", "balance", "worth"]);
     dataRows = rows.slice(1);
     if (tickerCol === -1 || unitsCol === -1) return null;
   }
@@ -428,4 +441,31 @@ export function analyzeCsv(text: string): AnalyzeResult | null {
 
 export function analyzePdfText(text: string): AnalyzeResult | null {
   return detectSelfwealthStatement(text) || detectSuperheroStatement(text);
+}
+
+// Forced-type intake: when auto-detection can't identify a file, the user picks
+// what it is and we run that kind's parsers directly (the right detector may
+// simply have lost the ordering race, or the headers are unusual). Returns null
+// if even the forced parser can't make sense of the columns.
+export function analyzeCsvAs(text: string, kind: ImportKind): AnalyzeResult | null {
+  const rows = parseCsv(text);
+  if (rows.length === 0) return null;
+  if (kind === "trades") {
+    return (
+      detectGenericTrades(rows) ||
+      detectSelfwealthCashReport(rows) ||
+      detectExchangeOrders(rows)
+    );
+  }
+  if (kind === "holdings") {
+    return detectHoldingsCsv(rows);
+  }
+  return detectBankTransactions(rows);
+}
+
+export function analyzePdfTextAs(text: string, kind: ImportKind): AnalyzeResult | null {
+  // PDF text extraction is only reliable for holdings statements; orders and
+  // transactions from a PDF should come in as CSV.
+  if (kind === "holdings") return analyzePdfText(text);
+  return null;
 }
